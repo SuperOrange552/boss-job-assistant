@@ -6,6 +6,7 @@ import {
   containsSelfDisadvantage,
   contactEligibility,
   formatPreferredGreeting,
+  conversationalJobTitle,
   looksLikeCapabilityMenu,
   normalizeCompanyKey,
   parseModelResult,
@@ -306,4 +307,19 @@ test("模型输入使用设置页保存的招呼语规则", () => {
   assert.equal(payload.greetingRules, "拟人化；有礼貌；结合招聘信息");
   assert.equal(payload.contactRound, 2);
   assert.match(payload.candidateSummary, /掌门AI一对一/u);
+});
+
+test("话术里的岗位名去掉括号备注、招聘前缀和福利尾巴，原始标题不变", () => {
+  assert.equal(conversationalJobTitle("软件测试工程师（电商方向）"), "软件测试工程师");
+  assert.equal(conversationalJobTitle("测试工程师(上海)(急招)"), "测试工程师");
+  assert.equal(conversationalJobTitle("【急招】接口测试工程师"), "接口测试工程师");
+  assert.equal(conversationalJobTitle("高级测试工程师-五险一金"), "高级测试工程师");
+  assert.equal(conversationalJobTitle("徐汇区/诚聘测试工程师（无需加班）"), "测试工程师");
+  assert.equal(conversationalJobTitle("产品+运营"), "产品+运营");
+  const job = { title: "软件测试工程师（电商方向）", recruiterName: "陈女士", company: "示例公司", description: "负责订单和支付流程测试" };
+  assert.equal(formatPreferredGreeting("看咱们软件测试工程师（电商方向）要做订单测试，（电商方向）这块我做过。", job),
+    "陈老师您好，看咱们软件测试工程师要做订单测试，这块我做过。");
+  const payload = buildModelPayload(job, analyzeJob(job), DEFAULT_SETTINGS);
+  assert.equal(payload.job.jobTitle, "软件测试工程师");
+  assert.equal(job.title, "软件测试工程师（电商方向）");
 });

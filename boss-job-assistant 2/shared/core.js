@@ -499,6 +499,50 @@ export function normalizeCompanyKey(company = "") {
     .trim();
 }
 
+const CONVERSATIONAL_ROLE_WORDS = /(?:顾问|专员|助理|经理|主管|代表|销售|客服|工程师|运营|策划|开发|测试|产品|分析师|研究员|QA|HR)/iu;
+const TITLE_RECRUITING_PREFIX = /^(?:(?:高薪|急)?诚聘|高薪招聘|诚招|急招|直招|招聘)\s*/iu;
+const TITLE_BENEFIT_TAIL = /^(?:员工宿舍|提供住宿|免费住宿|包住|包吃住|包吃|[五六七]险(?:一金)?|双休|周末双休|提成|奖金|补贴|年终奖|带薪年假|节日福利|餐补|房补|交通补贴|下午茶|不加班|轻松无压力|时间自由|就近安排)$/iu;
+const TITLE_BRACKET_NOTE = /\s*[（(【\[〔][^（()）【】\[\]〔〕]{0,80}[）)】\]〕]\s*/gu;
+
+// 话术里用的岗位“对话简称”（同通用版0.2.6，括号改为全部去掉）：
+// 括号备注、招聘前缀、明确福利尾巴不写进招呼语，否则一看就是机器拼的。
+// 只用于模型输入和话术；筛选、身份核对、日志、防重仍用页面原始 job.title。
+export function conversationalJobTitle(rawTitle = "") {
+  const original = normalizeText(rawTitle);
+  if (!original) return "";
+  let title = original, previous = "";
+  while (title !== previous) {previous = title;title = normalizeText(title.replace(TITLE_BRACKET_NOTE, " "));}
+  title = title.replace(/[（(【\[〔）)】\]〕]/gu, " ");
+  const plusParts = title.split(/\s*[+＋]\s*/u).map(normalizeText).filter(Boolean);
+  if (plusParts.length > 1 && plusParts.slice(1).every((part) => TITLE_BENEFIT_TAIL.test(part))) title = plusParts[0];
+  const dashParts = title.split(/\s*[-—–_·]\s*|\s+/u).map(normalizeText).filter(Boolean);
+  if (dashParts.length > 1) {
+    const kept = dashParts.filter((part, index) => index === 0 || !TITLE_BENEFIT_TAIL.test(part));
+    if (kept.length < dashParts.length) title = kept.join(" ");
+  }
+  const slashParts = title.split(/\s*[/／|｜]\s*/u).map((part) => normalizeText(part).replace(TITLE_RECRUITING_PREFIX, "")).filter(Boolean);
+  if (slashParts.length > 1) {
+    const roleParts = slashParts.filter((part) => CONVERSATIONAL_ROLE_WORDS.test(part));
+    if (roleParts.length) title = roleParts[0];
+  }
+  title = normalizeText(title.replace(TITLE_RECRUITING_PREFIX, "").replace(/^[·•:：,，\-—\s]+|[·•:：,，\-—\s]+$/gu, ""));
+  return title || original;
+}
+
+// 模型偶尔照抄原始标题或其中的括号备注，发送前统一换成对话简称。
+function stripTitleNotes(text, job = {}) {
+  const raw = normalizeText(job.title);
+  let result = text;
+  for (const full of [raw, normalizeText(job.listingTitle)].filter(value => value && value !== conversationalJobTitle(value))) {
+    result = result.split(full).join(conversationalJobTitle(full));
+  }
+  for (const note of [raw, normalizeText(job.listingTitle)].join(" ").match(TITLE_BRACKET_NOTE) || []) {
+    const clean = normalizeText(note);
+    if (clean) result = result.split(clean).join("");
+  }
+  return normalizeText(result.replace(/\s+([，。！？、])/gu, "$1")) || text;
+}
+
 // 0.4.19：只统一开头称呼为「X老师您好」，其余开场交给模型按职位描述自然展开，不再套固定的“看贵公司在招聘…岗位”。
 export function formatPreferredGreeting(rawGreeting, job = {}) {
   const salutation = recruiterSalutation(job.recruiterName);
@@ -507,7 +551,7 @@ export function formatPreferredGreeting(rawGreeting, job = {}) {
   const company = normalizeText(job.company);
   const multiEntity = ['agency','multi_entity'].includes(job.recruitmentMode);
   if (company) remainder = normalizeText(remainder.split(company).join(multiEntity ? '您这边' : '贵公司'));
-  remainder = remainder.replace(/^[。；;：:，,\s]+/u, "");
+  remainder = stripTitleNotes(remainder, job).replace(/^[。；;：:，,\s]+/u, "");
   return `${salutation}，${remainder || "看了咱们这个岗位的职责，和我之前做的事情挺对口的，方便的话想跟您进一步聊聊。"}`;
 }
 
@@ -584,8 +628,8 @@ export function buildModelPayload(job, localAnalysis, settings, round = 1) {
       listingCompany: normalizeText(job.listingCompany),
       recruiterCompany: normalizeText(job.recruiterCompany),
       employerCompany: job.employerCompanyConfirmed ? normalizeText(job.employerCompany) : '',
-      listingJobTitle: normalizeText(job.listingTitle),
-      jobTitle: normalizeText(job.title),
+      listingJobTitle: conversationalJobTitle(job.listingTitle),
+      jobTitle: conversationalJobTitle(job.title),
       recruiterDisplayName: normalizeText(job.recruiterName),
       recruiterSalutation: recruiterSalutation(job.recruiterName),
       location: normalizeText(job.location),
