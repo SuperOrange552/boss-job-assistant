@@ -124,9 +124,9 @@ test('外包不作为筛选排除理由，原硬件方向和列表标题仍参�
   const job={...observed,company:'任意外包商',location:'上海',recruitmentMode:'agency'};
   assert.equal(analyzeJob(job).decision,'recommend');
   assert.equal(analyzeJob({...job,listingTitle:'测试工程师-车载'}).decision,'postpone');
-  const greeting=formatPreferredGreeting('老师您好，我有3年测试经验，期待您的回复。',job);
-  assert.match(greeting,/看到您这边在招聘/u);
-  assert.doesNotMatch(greeting,/看贵公司在招聘/u);
+  const greeting=formatPreferredGreeting('老师您好，看任意外包商要做接口测试，我有3年测试经验。',job);
+  assert.match(greeting,/看您这边要做接口测试/u);
+  assert.doesNotMatch(greeting,/贵公司|任意外包商/u);
 });
 
 test('日志展示公司来源和角色，不保存JD全文、API Key或简历',()=>{

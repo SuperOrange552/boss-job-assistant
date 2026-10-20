@@ -50,6 +50,7 @@ async function simulate(ids,limit=2,{recordFailure=false,realOpen=false,hrActivi
   const context={state:{engineBusy:false,stopRequested:false},location:{pathname:'/web/geek/jobs'},Date:{now:()=>clock},
     precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,detailFingerprint,checkHrActivity,label:value=>value,
     sourceDocumentToken:'source-token',$:()=>({value:'仅内存测试'}),
+    DELIVERY_TIMEOUTS:{detail:30000,chat:60000,sendReady:15000,sendEvidence:15000,workerOutcome:240000},
     render(){},setNotice(message){notices.push(message);},async sleep(ms){clock+=ms;},async waitSourceVisible(){},async waitCooldown(){store.cooldownUntil=0;},async loadState(){},applyContactMarkers(){},
     blockerText:()=>'',messageInput:()=>null,
     async nextCard(run){const card=cards.find(c=>!run.seenJobKeys.includes(c.jobKey));if(selected.length>ids.length+2) throw new Error('反复处理同一岗位');return card;},

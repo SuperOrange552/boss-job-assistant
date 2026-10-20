@@ -52,21 +52,31 @@ function harness(options={}) {
     if (options.sendEvidence!==false) {document.body.innerText+=input.value;input._value='';}
     options.onTextClick?.(api);
   }};
+  const toChat=()=>{location.pathname='/web/geek/chat';location.href='https://www.zhipin.com/web/geek/chat';};
+  let popupOpen=false;
+  const popupClose={textContent:'×',className:'dialog-close',getAttribute:()=>null,addEventListener(){},click() {events.push('close_popup');popupOpen=false;toChat();}};
+  const popup={textContent:'微信扫码订阅回复消息，HR回复后第一时间通知你'};
   const communication={textContent:'立即沟通',tagName:'A',disabled:Boolean(options.communicationDisabled),getAttribute:name=>name==='href' ? 'javascript:;' : null,addEventListener(){},click() {
-    events.push('click_communication');if(options.communicationNoop) return;
-    location.pathname='/web/geek/chat';location.href='https://www.zhipin.com/web/geek/chat';
+    const kind=this.textContent==='继续沟通' ? 'continue' : 'initial';
+    events.push(kind==='continue' ? 'click_continue' : 'click_communication');
+    if(options.communicationNoop) return;
+    if(options.popupAfterClick) {popupOpen=true;return;}
+    if(options.continueStep && kind==='initial') {this.textContent='继续沟通';return;}
+    if(options.continueNoop && kind==='continue') return;
+    toChat();
   }};
   const api={state,pending,location,document,events,writes,clicks,records,imageCalls,logs,elapsed,
     replaceInput() {input.isConnected=false;input=new TextArea('replacement');return input;},
     stopRun() {runStatus='stopped';},replaceTask() {activeId='different-delivery';},get input() {return input;}};
   const context={state,location,document,normalizeText,stableJobKey,destinationIdentityReport,
-    Date:{now:()=>clock},HTMLTextAreaElement:TextArea,HTMLInputElement:class {},
+    Date:{now:()=>clock,parse:value=>Date.parse(value)},HTMLTextAreaElement:TextArea,getComputedStyle:()=>({pointerEvents:'auto'}),HTMLInputElement:class {},
     InputEvent:class {constructor(type,settings) {this.type=type;Object.assign(this,settings);}},
     Event:class {constructor(type,settings) {this.type=type;Object.assign(this,settings);}},
     panel:{classList:{add(){}}},$:()=>({}),setNotice(){},render(){},analyzeJob:()=>({}),
     async sleep(ms) {clock+=ms;options.onSleep?.(api,ms);},
     visible(selector,root) {
-      if(selector.startsWith("[role='dialog']")) return options.dialogPresent ? [{}] : [];
+      if(root===popup) return selector.startsWith('button') ? [popupClose] : [];
+      if(selector.startsWith("[role='dialog']")) return popupOpen ? [popup] : options.dialogPresent ? [{}] : [];
       if (location.pathname.startsWith('/job_detail/')) return [];
       if (selector.startsWith('textarea')) return options.inputAbsent ? [] : [input];
       return root ? [send] : [send];
@@ -95,6 +105,19 @@ function harness(options={}) {
       if (message.type==='GET_AUTOMATION') return {ok:true,session:{id:'run-1',status:runStatus}};
       if (message.type==='GET_RESUME_IMAGE_FOR_DELIVERY') return {ok:true,enabled:options.imageEnabled!==false,configured:true,image:{name:'简历.png',type:'image/png'}};
       if (message.type==='UPDATE_PENDING_DELIVERY') {events.push(`stage:${message.stage}`);pending.stage=message.stage;return {ok:true,pending};}
+      if (message.type==='RESERVE_COMMUNICATION_ACTION') {
+        if (pending.textSendRequestedAt || !['opening_chat','continuing_chat'].includes(pending.stage)
+          || (pending.communicationActions || []).some(action=>action.kind===message.kind)) return {ok:true,claimed:false,pending};
+        pending.communicationActions=[...(pending.communicationActions || []),{kind:message.kind,buttonText:message.buttonText,at:new Date(clock).toISOString()}];
+        pending.stage=message.kind==='continue' ? 'continuing_chat' : 'opening_chat';
+        events.push(`reserve:${message.kind}`);return {ok:true,claimed:true,pending};
+      }
+      if (message.type==='RESERVE_TEXT_SEND') {
+        if (pending.textSendRequestedAt) return {ok:true,claimed:false,pending,reason:'已请求发送'};
+        assert.equal(pending.stage,'preparing_text','只有草稿就绪后才能登记发送');
+        pending.textSendRequestedAt=new Date(clock).toISOString();pending.stage='sending_text';
+        events.push('reserve:text');return {ok:true,claimed:true,pending};
+      }
       if (message.type==='RECORD_SEND') {
         records.push(message);events.push(`record:${message.resumeImageStatus}`);
         return {ok:true,automationSession:{id:'run-1',status:runStatus},perSendRestSeconds:1};
@@ -107,6 +130,7 @@ function harness(options={}) {
     }
   };
   vm.createContext(context);vm.runInContext(`${flow}\nasync function workerEntry(pending) {${workerRecovery}}`,context);
+  api.communication=communication;
   api.run=()=>context.runDeliveryWorker(pending,options.entry==='detail' ? 'detail' : 'chat');
   api.runEntry=()=>context.workerEntry({pending,isWorker:true,workerRole:options.entry==='detail' ? 'detail' : 'chat'});
   api.deliver=()=>context.deliver(pending);
@@ -115,13 +139,15 @@ function harness(options={}) {
 
 function assertNoSend(h) {assert.equal(h.writes.length,0);assert.equal(h.clicks.length,0);assert.equal(h.imageCalls.length,0);assert.equal(h.records.length,0);}
 
-test('日志复现：沟通点击没有打开聊天，只点一次；每5秒记录入口状态，超时不冒充成功',async()=>{
+test('日志复现：沟通点击没有打开聊天，只点一次；每5秒记录入口状态，60秒超时不冒充成功',async()=>{
   const h=harness({entry:'detail',communicationNoop:true,dialogPresent:true});
   await assert.rejects(h.run(),/communication_entry_timeout/);assertNoSend(h);
   assert.equal(h.events.filter(e=>e==='click_communication').length,1);
+  assert.equal(h.events.filter(e=>e==='click_continue').length,0);
   const entries=h.logs.filter(e=>e.stage==='沟通入口诊断');
-  assert.deepEqual(entries.map(e=>e.result),['before_click','waiting','waiting','waiting','timeout']);
-  assert.ok(entries.at(-1).details.elapsedMs>=20000);
+  assert.equal(entries[0].result,'before_click');assert.equal(entries.at(-1).result,'timeout');
+  assert.ok(entries.slice(1,-1).length>=10 && entries.slice(1,-1).every(e=>e.result==='waiting'));
+  assert.ok(entries.at(-1).details.elapsedMs>=60000);
   for(const e of entries) {
     assert.equal(e.details.buttonHrefKind,'javascript');assert.equal(e.details.dialogPresent,true);
     assert.equal(e.details.chatTabBound,false);assert.equal(e.details.inputFound,false);
@@ -140,7 +166,7 @@ test('真实详情 worker 进入聊天：输入框先出现，抬头4秒后才�
   assert.equal(await h.run(),true);
   assert.equal(h.writes.length,1);assert.equal(h.clicks.length,1);assert.equal(h.imageCalls.length,1);assert.equal(h.records.length,1);
   assert.ok(h.writes[0].at>=4600);
-  assert.deepEqual(h.events,['stage:opening_job','stage:opening_chat','click_communication','stage:sending_text','fill_text','click_text','stage:sending_resume','send_image','stage:recording','record:sent','close_worker']);
+  assert.deepEqual(h.events,['stage:opening_job','stage:opening_chat','reserve:initial','click_communication','stage:preparing_text','fill_text','reserve:text','click_text','stage:sending_resume','send_image','stage:recording','record:sent','close_worker']);
   assert.ok(h.logs.some(x=>x.stage==='聊天会话就绪' && x.result==='loading'));
   assert.ok(h.logs.some(x=>x.stage==='聊天会话就绪' && x.result==='ready'));
 });
@@ -247,4 +273,50 @@ test('未开启图片时，只发送文字并记录 not_requested',async()=>{
   const h=harness({imageEnabled:false});
   assert.equal(await h.run(),true);assert.equal(h.clicks.length,1);assert.equal(h.imageCalls.length,0);
   assert.equal(h.records.length,1);assert.equal(h.records[0].resumeImageStatus,'not_requested');
+});
+
+test('点击立即沟通后停在“继续沟通”中间页：只补点一次继续沟通，进入聊天后正常发送',async()=>{
+  const h=harness({entry:'detail',continueStep:true});
+  assert.equal(await h.run(),true);
+  assert.equal(h.events.filter(e=>e==='click_communication').length,1);
+  assert.equal(h.events.filter(e=>e==='click_continue').length,1);
+  assert.ok(h.events.indexOf('reserve:continue')<h.events.indexOf('click_continue'));
+  assert.equal(h.writes.length,1);assert.equal(h.clicks.length,1);assert.equal(h.records.length,1);
+  assert.ok(h.logs.some(e=>e.stage==='沟通中间页' && e.result==='continue_ready'));
+});
+
+test('点击后出现微信订阅/二维码弹层：只点弹层内部关闭，然后继续当前岗位发送',async()=>{
+  const h=harness({entry:'detail',popupAfterClick:true});
+  assert.equal(await h.run(),true);
+  assert.equal(h.events.filter(e=>e==='close_popup').length,1);
+  assert.ok(h.events.indexOf('close_popup')>h.events.indexOf('click_communication'));
+  assert.equal(h.clicks.length,1);assert.equal(h.records.length,1);
+  assert.ok(h.logs.some(e=>e.stage==='微信订阅弹层' && e.result==='closed_and_continued'));
+});
+
+test('按钮变成继续沟通但始终没有聊天框：继续沟通最多一次，按发送结果待核对交给单岗位失败',async()=>{
+  const h=harness({entry:'detail',continueStep:true,continueNoop:true});
+  await h.runEntry();assertNoSend(h);
+  assert.equal(h.events.filter(e=>e==='click_continue').length,1);
+  const report=h.logs.find(log=>log.failureReport)?.failureReport;
+  assert.match(report.reason,/communication_state_changed/);assert.equal(report.uncertain,true);
+  assert.ok(!h.events.includes('stop_run'));
+});
+
+test('页面切换后恢复同一任务：不重新点击立即沟通，直接处理继续沟通',async()=>{
+  const h=harness({entry:'detail',continueStep:true});
+  h.communication.textContent='继续沟通';
+  h.pending.stage='opening_chat';
+  h.pending.communicationActions=[{kind:'initial',buttonText:'立即沟通',at:new Date(0).toISOString()}];
+  assert.equal(await h.run(),true);
+  assert.equal(h.events.filter(e=>e==='click_communication').length,0);
+  assert.equal(h.events.filter(e=>e==='click_continue').length,1);
+  assert.ok(!h.events.includes('stage:opening_job'));
+  assert.equal(h.clicks.length,1);
+});
+
+test('已经登记过发送请求的任务在页面恢复后不再点击发送',async()=>{
+  const h=harness();
+  h.pending.textSendRequestedAt=new Date(0).toISOString();h.pending.stage='sending_text';
+  await assert.rejects(h.deliver(),/delivery_already_requested/);assertNoSend(h);
 });

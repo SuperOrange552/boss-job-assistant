@@ -150,9 +150,20 @@ test("模型话术会统一为用户指定的自然开头并隐藏具体公司�
       recruiterName: "赵洁琼 在线"
     }
   );
-  assert.match(greeting, /^赵老师您好，看贵公司在招聘软件测试工程师岗位，/u);
+  // 只统一称呼；正文开场保留模型按职位描述写的内容，公司全称换成“贵公司”。
+  assert.equal(greeting, "赵老师您好，看到贵公司在招软件测试工程师，我有3年软件测试经验，也做过App和接口测试，希望进一步沟通。");
   assert.doesNotMatch(greeting, /示例教育科技/u);
   assert.doesNotMatch(greeting, /老师好/u);
+});
+
+test("称呼统一但不再强加固定的“看贵公司在招聘…岗位”开头", () => {
+  const job = { title: "接口测试工程师", company: "示例公司", recruiterName: "陈女士" };
+  assert.equal(formatPreferredGreeting("陈老师你好！看JD里要做支付链路的接口测试，这块我之前一直在做。", job),
+    "陈老师您好，看JD里要做支付链路的接口测试，这块我之前一直在做。");
+  assert.equal(formatPreferredGreeting("您好，看岗位要负责App回归，我平时就在跟这块。", job),
+    "陈老师您好，看岗位要负责App回归，我平时就在跟这块。");
+  assert.doesNotMatch(formatPreferredGreeting("岗位里提到的订单测试我做过不少。", job), /看贵公司在招聘/u);
+  assert.match(formatPreferredGreeting("", job), /^陈老师您好，.+聊聊。$/u);
 });
 
 test("菜单式技术堆砌会被识别，只回应1至2个岗位要求的话术可以通过", () => {

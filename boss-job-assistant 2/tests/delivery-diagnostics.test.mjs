@@ -68,6 +68,7 @@ async function runWorker({missingName=false,wrongTitle=false,missingRoot=false,m
   const context={state:{},panel:{classList:{add(){}}},$:()=>({}),setNotice(){},render(){},analyzeJob:()=>({}),
     Date:{now:()=>elapsed},location:{pathname:'/job_detail/target-job.html',href:`https://www.zhipin.com/job_detail/${wrongId ? 'wrong-job' : 'target-job'}.html?securityId=TEST`},
     document:{visibilityState:'hidden',readyState:'complete'},normalizeText,stableJobKey,destinationIdentityReport,
+    DELIVERY_TIMEOUTS:{detail:30000,chat:60000},
     async sleep(ms){elapsed+=ms;},blockerText:()=>'',isChatPage:()=>false,findDetailRoot:()=>missingRoot ? null : {},
     communicationButton:()=>missingButton ? null : {},
     extractCurrentJob(hint,trace){Object.assign(trace,{rootFound:!missingRoot,rootSource:'.job-detail-section',rootTag:'DIV',rootClass:'job-detail-section',titleSource:'h1',recruiterSource:missingName ? 'not_found' : '.boss-name',recruiterContainerFound:!missingName});
@@ -92,8 +93,8 @@ test('运行真实临时投递循环：正文与招聘者均读空，日志保�
   assert.equal(event.result,'read_error');
   assert.equal(event.expected.recruiterName,'邓年赞');
   assert.equal(event.observed.recruiterName,'');
-  assert.equal(event.details.attempts,50);
-  assert.equal(event.details.elapsedMs,15000);
+  assert.equal(event.details.attempts,100);
+  assert.equal(event.details.elapsedMs,30000);
   assert.equal(event.details.visibility,'hidden');
   assert.equal(event.details.recruiterSource,'not_found');
   assert.equal(event.details.communicationButtonFound,true);
