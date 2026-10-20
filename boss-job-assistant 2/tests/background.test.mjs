@@ -232,8 +232,24 @@ test("旧设置也会自动补上短板与菜单式话术限制", async () => {
   assert.equal(saved.ok, true);
   const current = await send({ type: "GET_SETTINGS", includeApiKey: true }, optionsSender);
   assert.match(current.settings.greetingRules, /不得出现不会、没做过/u);
-  assert.match(current.settings.greetingRules, /只选最相关的1至2项/u);
   assert.match(current.settings.greetingRules, /最多提及2个工具或技术栈/u);
+  assert.match(current.settings.greetingRules, /^拟人化；有礼貌；结合岗位信息/u);
+});
+
+test("0.4.18保存过的旧默认写作要求迁移为新版，用户自己补充的行保留", async () => {
+  const optionsSender = { url: "chrome-extension://test/options.html" };
+  const { LEGACY_GREETING_RULES, DEFAULT_SETTINGS } = await import("../settings.js");
+  const previous = (await chrome.storage.local.get("settings")).settings;
+  await chrome.storage.local.set({ settings: { ...previous, greetingRules: `${LEGACY_GREETING_RULES}\n8. 语气轻松一点`, greetingRulesVersion: undefined } });
+  try {
+    const current = await send({ type: "GET_SETTINGS", includeApiKey: true }, optionsSender);
+    assert.ok(current.settings.greetingRules.startsWith(DEFAULT_SETTINGS.greetingRules));
+    assert.match(current.settings.greetingRules, /8\. 语气轻松一点$/u);
+    assert.doesNotMatch(current.settings.greetingRules, /离家近|只表达已经具备/u);
+    assert.equal(current.settings.greetingRulesVersion, 2);
+  } finally {
+    await chrome.storage.local.set({ settings: previous });
+  }
 });
 
 test("简历图片只能由设置页保存读取，并只交给当前临时投递页或其聊天页", async () => {
@@ -383,7 +399,7 @@ test("菜单式模型话术会携带原因自动重写一次", async () => {
     assert.equal(generated.ok, true);
     assert.equal(requestBodies.length, 2);
     assert.match(requestBodies[1].messages[1].content, /像在背技能清单/u);
-    assert.match(generated.modelResult.greeting, /^陈老师您好，看贵公司在招聘接口测试工程师岗位，/u);
+    assert.match(generated.modelResult.greeting, /^陈老师您好，我有3年软件测试经验/u);
     assert.doesNotMatch(generated.modelResult.greeting, /JMeter/u);
   } finally {
     globalThis.fetch = originalFetch;

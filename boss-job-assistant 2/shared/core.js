@@ -499,44 +499,79 @@ export function normalizeCompanyKey(company = "") {
     .trim();
 }
 
+const CONVERSATIONAL_ROLE_WORDS = /(?:顾问|专员|助理|经理|主管|代表|销售|客服|工程师|运营|策划|开发|测试|产品|分析师|研究员|QA|HR)/iu;
+const TITLE_RECRUITING_PREFIX = /^(?:(?:高薪|急)?诚聘|高薪招聘|诚招|急招|直招|招聘)\s*/iu;
+const TITLE_BENEFIT_TAIL = /^(?:员工宿舍|提供住宿|免费住宿|包住|包吃住|包吃|[五六七]险(?:一金)?|双休|周末双休|提成|奖金|补贴|年终奖|带薪年假|节日福利|餐补|房补|交通补贴|下午茶|不加班|轻松无压力|时间自由|就近安排)$/iu;
+const TITLE_BRACKET_NOTE = /\s*[（(【\[〔][^（()）【】\[\]〔〕]{0,80}[）)】\]〕]\s*/gu;
+
+// 话术里用的岗位“对话简称”（同通用版0.2.6，括号改为全部去掉）：
+// 括号备注、招聘前缀、明确福利尾巴不写进招呼语，否则一看就是机器拼的。
+// 只用于模型输入和话术；筛选、身份核对、日志、防重仍用页面原始 job.title。
+export function conversationalJobTitle(rawTitle = "") {
+  const original = normalizeText(rawTitle);
+  if (!original) return "";
+  let title = original, previous = "";
+  while (title !== previous) {previous = title;title = normalizeText(title.replace(TITLE_BRACKET_NOTE, " "));}
+  title = title.replace(/[（(【\[〔）)】\]〕]/gu, " ");
+  const plusParts = title.split(/\s*[+＋]\s*/u).map(normalizeText).filter(Boolean);
+  if (plusParts.length > 1 && plusParts.slice(1).every((part) => TITLE_BENEFIT_TAIL.test(part))) title = plusParts[0];
+  const dashParts = title.split(/\s*[-—–_·]\s*|\s+/u).map(normalizeText).filter(Boolean);
+  if (dashParts.length > 1) {
+    const kept = dashParts.filter((part, index) => index === 0 || !TITLE_BENEFIT_TAIL.test(part));
+    if (kept.length < dashParts.length) title = kept.join(" ");
+  }
+  const slashParts = title.split(/\s*[/／|｜]\s*/u).map((part) => normalizeText(part).replace(TITLE_RECRUITING_PREFIX, "")).filter(Boolean);
+  if (slashParts.length > 1) {
+    const roleParts = slashParts.filter((part) => CONVERSATIONAL_ROLE_WORDS.test(part));
+    if (roleParts.length) title = roleParts[0];
+  }
+  title = normalizeText(title.replace(TITLE_RECRUITING_PREFIX, "").replace(/^[·•:：,，\-—\s]+|[·•:：,，\-—\s]+$/gu, ""));
+  return title || original;
+}
+
+// 模型偶尔照抄原始标题或其中的括号备注，发送前统一换成对话简称。
+function stripTitleNotes(text, job = {}) {
+  const raw = normalizeText(job.title);
+  let result = text;
+  for (const full of [raw, normalizeText(job.listingTitle)].filter(value => value && value !== conversationalJobTitle(value))) {
+    result = result.split(full).join(conversationalJobTitle(full));
+  }
+  for (const note of [raw, normalizeText(job.listingTitle)].join(" ").match(TITLE_BRACKET_NOTE) || []) {
+    const clean = normalizeText(note);
+    if (clean) result = result.split(clean).join("");
+  }
+  return normalizeText(result.replace(/\s+([，。！？、])/gu, "$1")) || text;
+}
+
+// 0.4.19：只统一开头称呼为「X老师您好」，其余开场交给模型按职位描述自然展开，不再套固定的“看贵公司在招聘…岗位”。
 export function formatPreferredGreeting(rawGreeting, job = {}) {
   const salutation = recruiterSalutation(job.recruiterName);
-  const title = normalizeText(job.title) || "这个岗位";
-  const raw = normalizeText(rawGreeting).replace(/^[“"]|[”"]$/gu, "");
-  const clauses = raw.split(/[，,]/u).map(normalizeText).filter(Boolean);
-  if (clauses.length && /老师(?:好|您好)|^您好/u.test(clauses[0])) clauses.shift();
+  let remainder = normalizeText(rawGreeting).replace(/^[“"]|[”"]$/gu, "")
+    .replace(/^(?:[\u3400-\u9fff]{0,4}(?:老师|女士|先生|经理|总|HR|hr)\s*(?:您好|你好|好)?|您好|你好|hi|hello)(?:[，,！!。：:\s]+|$)/iu, "");
   const company = normalizeText(job.company);
-  if (clauses.length && /在招|招聘/u.test(clauses[0]) && (
-    /公司|贵司/u.test(clauses[0])
-    || (company && clauses[0].includes(company))
-    || /岗位|工程师|测试/u.test(clauses[0])
-  )) clauses.shift();
-  let remainder = normalizeText(clauses.join("，"))
-    .replace(/^[。；;：:\s]+/u, "")
-    .replace(/^(?:这个岗位|该岗位)[，,：:\s]*/u, "");
   const multiEntity = ['agency','multi_entity'].includes(job.recruitmentMode);
   if (company) remainder = normalizeText(remainder.split(company).join(multiEntity ? '您这边' : '贵公司'));
-  const roleTitle = /岗位$/u.test(title) ? title : `${title}岗位`;
-  return `${salutation}，${multiEntity ? '看到您这边在招聘' : '看贵公司在招聘'}${roleTitle}${remainder ? `，${remainder}` : "，我的经历与岗位要求比较匹配，期待您的回复，感谢！"}`;
+  remainder = stripTitleNotes(remainder, job).replace(/^[。；;：:，,\s]+/u, "");
+  return `${salutation}，${remainder || "看了咱们这个岗位的职责，和我之前做的事情挺对口的，方便的话想跟您进一步聊聊。"}`;
 }
 
 export function buildFocusedFallback(job, candidateSummary = '') {
   const jd = cleanJobText(`${job.title} ${job.description}`).toLowerCase();
   const profile = normalizeText(candidateSummary).toLowerCase();
   const choices = [
-    {job:/python|接口自动化/u, profile:/python/u, also:/接口自动化/u, text:'能用Python编写接口自动化脚本'},
-    {job:/接口|postman/u, profile:/postman/u, also:/接口/u, text:'熟悉使用Postman验证接口功能与异常场景'},
-    {job:/性能|jmeter|并发/u, profile:/jmeter/u, also:/性能|并发/u, text:'使用JMeter参与过基础并发测试和性能回归'},
-    {job:/android|app|移动端/u, profile:/android/u, also:/回归/u, text:'参与过Android App的版本回归和新增功能测试'},
-    {job:/mysql|sql|数据/u, profile:/mysql/u, also:/查询|sql/u, text:'能用MySQL查询业务数据，核对接口结果与数据记录是否一致'},
-    {job:/ai|大模型|评测/u, profile:/dify/u, also:/评测/u, text:'有Dify批量评测实践，参与过AI功能结果校验'},
-    {job:/用例|功能|回归/u, profile:/测试用例|用例设计/u, also:/回归/u, text:'能够根据需求设计测试用例，并开展版本回归'}
+    {job:/python|接口自动化/u, profile:/python/u, also:/接口自动化/u, point:'接口自动化', text:'之前一直用Python写接口自动化脚本，平时的回归基本靠它跑'},
+    {job:/接口|postman/u, profile:/postman/u, also:/接口/u, point:'接口测试', text:'之前接口这块主要是我在负责，用Postman把正常流程和各种异常参数都过一遍'},
+    {job:/性能|jmeter|并发/u, profile:/jmeter/u, also:/性能|并发/u, point:'性能测试', text:'之前用JMeter做过并发测试和性能回归，会盯TPS、响应时间这些指标'},
+    {job:/android|app|移动端/u, profile:/android/u, also:/回归/u, point:'App测试', text:'之前Android App的版本回归和新功能测试一直是我在跟'},
+    {job:/mysql|sql|数据/u, profile:/mysql/u, also:/查询|sql/u, point:'数据校验', text:'平时会直接写SQL查库，核对接口返回和数据库记录是不是一致'},
+    {job:/ai|大模型|评测/u, profile:/dify/u, also:/评测/u, point:'AI功能测试', text:'之前用Dify做过批量评测，AI功能的结果校验也是我在做'},
+    {job:/用例|功能|回归/u, profile:/测试用例|用例设计/u, also:/回归/u, point:'功能测试', text:'之前从需求评审、写用例到版本回归都是我自己在跟'}
   ];
   const choice = choices.find(item=>item.job.test(jd) && item.profile.test(profile) && item.also.test(profile));
   if (!choice) return '';
   const years = profile.match(/(?:具备|有)?(\d+)年软件测试/u)?.[1];
-  const experience = years ? `我有${years}年软件测试经验，` : '';
-  return formatPreferredGreeting(`${experience}${choice.text}。岗位要求和我的经历比较匹配，期待您的回复，感谢！`,job);
+  const experience = years ? `做了${years}年测试，` : '';
+  return formatPreferredGreeting(`看岗位里比较看重${choice.point}，${experience}${choice.text}，感觉和咱们这边挺对口的，方便的话想跟您细聊一下。`,job);
 }
 
 export function contactEligibility(attempts = [], settings = CORE_CONTACT_DEFAULTS, nowValue = Date.now()) {
@@ -593,8 +628,8 @@ export function buildModelPayload(job, localAnalysis, settings, round = 1) {
       listingCompany: normalizeText(job.listingCompany),
       recruiterCompany: normalizeText(job.recruiterCompany),
       employerCompany: job.employerCompanyConfirmed ? normalizeText(job.employerCompany) : '',
-      listingJobTitle: normalizeText(job.listingTitle),
-      jobTitle: normalizeText(job.title),
+      listingJobTitle: conversationalJobTitle(job.listingTitle),
+      jobTitle: conversationalJobTitle(job.title),
       recruiterDisplayName: normalizeText(job.recruiterName),
       recruiterSalutation: recruiterSalutation(job.recruiterName),
       location: normalizeText(job.location),

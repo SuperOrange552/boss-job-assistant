@@ -788,6 +788,118 @@
     return /\/web\/geek\/(?:chat|message|im)(?:\/|$)/u.test(location.pathname) || Boolean(input && sendButtonFor(input));
   }
 
+  // 各项为等待上限（同通用版0.2.6默认值），页面提前就绪会立即继续。
+  const DELIVERY_TIMEOUTS = Object.freeze({detail:30000,chat:60000,sendReady:15000,sendEvidence:15000,workerOutcome:240000});
+
+  // 0.4.19：沟通点击判断沿用通用版 0.2.6。按钮自带站内聊天地址时直接进入该地址。
+  function communicationTargetUrl(button) {
+    if (!button) return '';
+    const anchor = button.matches?.('a[href]') ? button : button.closest?.('a[href]') || button.querySelector?.('a[href]');
+    const values = [
+      anchor?.getAttribute?.('href'),
+      button.getAttribute?.('href'),
+      button.getAttribute?.('data-url'),
+      button.getAttribute?.('data-href'),
+      button.getAttribute?.('data-link'),
+      button.getAttribute?.('data-target'),
+      button.getAttribute?.('data-chat-url')
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+    for (const value of values) {
+      if (/^javascript:/iu.test(value)) continue;
+      try {
+        const target = new URL(value, location.href);
+        if (target.protocol === 'https:' && target.hostname === 'www.zhipin.com'
+          && /\/web\/geek\/(?:chat|message|im)(?:\/|$)/u.test(target.pathname)) return target.href;
+      } catch {}
+    }
+    return '';
+  }
+
+  // 同一任务的“立即沟通”“继续沟通”各自只登记并执行一次；页面重载后由后台记录拦住重复点击。
+  async function clickCommunication(pending, button) {
+    if (!controlEnabled(button)) throw new Error("[communication_button_disabled] 当前沟通按钮尚未就绪，未点击");
+    const buttonText = normalizeText(button.textContent || button.getAttribute?.('aria-label') || '');
+    const kind = buttonText === "继续沟通" ? "continue" : "initial";
+    const reserved = await sendRuntimeMessage({type:'RESERVE_COMMUNICATION_ACTION',deliveryId:pending.id,kind,
+      buttonText,path:`${location.pathname}${location.search || ''}`});
+    if (!reserved?.ok) throw new Error(reserved?.error || "登记沟通动作失败");
+    if (reserved.pending) Object.assign(pending, reserved.pending);
+    if (!reserved.claimed) return false;
+    const targetUrl = communicationTargetUrl(button);
+    if (targetUrl) {
+      await logEvent('沟通跳转','direct_navigation',`当前任务从“${buttonText}”进入按钮提供的站内聊天地址`,pending.job);
+      location.assign(targetUrl);
+    } else {
+      safeElementClick(button);
+      await logEvent('沟通跳转','clicked',`已点击“${buttonText}”；路径=${location.pathname}；继续等待聊天页`,pending.job);
+    }
+    return true;
+  }
+
+  async function continueCommunication(pending) {
+    // 只从点击沟通后的等待阶段调用。无输入框、同一目标岗位，且尚未发送文字时
+    // 才允许补上“继续沟通”这一步；同一任务最多登记并点击一次，不循环乱点。
+    if (pending.textSendRequestedAt || !["opening_chat", "continuing_chat"].includes(pending.stage)) return false;
+    if (messageInput() || !destinationMatches(pending)) return false;
+    const lastAction = pending.communicationActions?.at(-1);
+    if (lastAction && Date.now() - Date.parse(lastAction.at) < 1000) return false;
+    const button = communicationButton(findDetailRoot());
+    if (!button || normalizeText(button.textContent) !== "继续沟通" || !controlEnabled(button)) return false;
+    if (pending.communicationActions?.some(action => action.kind === "continue")) return false;
+    await logEvent('沟通中间页','continue_ready','当前任务仍停在同一岗位详情，出现继续沟通且没有聊天输入框，接着进入消息页',pending.job);
+    return clickCommunication(pending, button);
+  }
+
+  // 订阅/二维码弹层只在点击立即沟通/继续沟通之后、等待聊天输入框时处理（同 0.2.6）。
+  function subscriptionPopupReason(text, qrHints = []) {
+    const words = normalizeText(text).replace(/\s+/gu, "");
+    if (/验证码|安全验证|风险验证|账号异常|账户异常|登录验证/u.test(words)) return "";
+    if (words.includes("订阅") && words.includes("消息")) return "同时出现订阅和消息";
+    if (/二维码|扫码|扫一扫/u.test(words)) return "弹窗文字提示二维码或扫码";
+    if (qrHints.some((hint) => /二维码|qrcode|qr[-_ ]?code/iu.test(String(hint)))) return "弹窗内有二维码元素";
+    return "";
+  }
+
+  function subscriptionReplyDialog() {
+    return visible("[role='dialog'],.dialog-wrap,[class*='dialog'],[class*='modal']")
+      .map((element) => {
+        const qrHints = visible("img,canvas,svg,[class*='qr'],[id*='qr']", element)
+          .map((item) => `${item.getAttribute?.("alt") || ""} ${item.getAttribute?.("title") || ""} ${item.getAttribute?.("class") || ""} ${item.id || ""} ${item.getAttribute?.("src") || ""}`);
+        return { element, reason: subscriptionPopupReason(element.textContent, qrHints) };
+      })
+      .find(({ element, reason }) => reason && subscriptionDialogCloseButton(element)) || null;
+  }
+
+  function subscriptionDialogCloseButton(dialog) {
+    if (!dialog) return null;
+    const candidates = visible("button,a,[role='button'],[class*='close']", dialog).filter((element) => {
+      const descriptor = normalizeText(`${element.textContent} ${element.getAttribute?.("aria-label")} ${element.getAttribute?.("title")} ${element.className}`);
+      return /^(?:×|x|关闭)$/iu.test(descriptor) || /关闭|close|dialog-close|modal-close/iu.test(descriptor);
+    });
+    return candidates.length === 1 ? candidates[0] : candidates.find((element) => /close/iu.test(String(element.className || ""))) || null;
+  }
+
+  async function dismissSubscriptionReplyDialog(pending) {
+    const match = subscriptionReplyDialog();
+    if (!match) return false;
+    const close = subscriptionDialogCloseButton(match.element);
+    if (!close) return false;
+    safeElementClick(close);
+    await logEvent("微信订阅弹层", "closed_and_continued",
+      `点击立即沟通/继续沟通之后检测到弹层（${match.reason}）；只点击弹层内部关闭按钮，当前岗位继续等待真实聊天输入框`,
+      pending?.job);
+    return true;
+  }
+
+  function chatSurfaceDiagnostics() {
+    const dialogs = visible("[role='dialog'],.dialog-wrap,[class*='dialog'],[class*='modal']");
+    const placeholders = visible("textarea,input,[contenteditable='true']")
+      .map((element) => normalizeText(element.getAttribute?.("placeholder") || element.getAttribute?.("data-placeholder") || element.getAttribute?.("aria-label") || ""))
+      .filter(Boolean).slice(0, 8);
+    const pageText = normalizeText(document.body?.innerText || "");
+    return `可见弹层=${dialogs.length}，订阅回复区域=${pageText.includes("订阅回复消息") ? "是" : "否"}，输入候选=${placeholders.length}，占位提示=${placeholders.join(" / ") || "无"}`;
+  }
+
   function pendingPageContext() {
     return {
       type: "GET_PENDING_DELIVERY",
@@ -805,13 +917,15 @@
     return response;
   }
 
-  async function waitForInput(timeout = 12000) {
+  async function waitForInput(pending = null, timeout = DELIVERY_TIMEOUTS.chat) {
     const end = Date.now() + timeout;
     while (Date.now() < end) {
       const blocker = blockerText();
       if (blocker) throw new Error(`[platform_blocked] 页面出现安全验证或限制：${blocker.slice(0, 120)}`);
+      if (pending && await dismissSubscriptionReplyDialog(pending)) { await sleep(300); continue; }
       const input = messageInput();
       if (input) return input;
+      if (pending) await continueCommunication(pending);
       await sleep(250);
     }
     return null;
@@ -834,21 +948,83 @@
     return normalizeText(input.matches("textarea,input") ? input.value : input.textContent);
   }
 
+  // 只认真实发送控件；外层容器文字恰好是“发送”时不再误选（0.2.6 修复）。
   function sendButtonFor(input) {
     let root = input.parentElement;
-    for (let depth = 0; depth < 8 && root; depth += 1, root = root.parentElement) {
-      const found = visible("button,a,[role='button'],div", root).find((element) => /^发送$/u.test(normalizeText(element.textContent)));
-      if (found) return found;
+    const selectors = "button,a,[role='button'],input[type='submit'],input[type='button'],.btn-send,.send-btn,.send-button,[class*='btn-send'],[class*='send-btn'],[data-action='send'],[data-action='send-message']";
+    for (let depth = 0; depth < 8 && root && root !== document.body && root !== document.documentElement; depth += 1, root = root.parentElement) {
+      const candidates = visible(selectors, root).filter(element => /^发送$/u.test(normalizeText(element.value || element.textContent)));
+      const controls = candidates.filter(element => !candidates.some(other => other !== element && element.contains?.(other)));
+      if (controls.length === 1) return controls[0];
+      if (controls.length > 1) return null;
     }
-    return visible("button,a,[role='button']").find((element) => /^发送$/u.test(normalizeText(element.textContent))) || null;
+    return null;
   }
 
-  async function waitForSendEvidence(input, text) {
-    const end = Date.now() + 6000;
+  function controlEnabled(element) {
+    return Boolean(element && !element.disabled && element.getAttribute?.("aria-disabled") !== "true"
+      && !element.closest?.("[disabled],[aria-disabled='true'],.disabled,.is-disabled")
+      && getComputedStyle(element).pointerEvents !== "none");
+  }
+
+  function controlDescription(element) {
+    return element ? `${String(element.tagName || '').toLowerCase()}#${element.id || '-'} class=${String(element.className || '').slice(0,100)} 可点击=${controlEnabled(element) ? '是' : '否'}` : "未找到发送控件";
+  }
+
+  // 草稿与发送按钮连续两次就绪才点击；输入框被替换时不向旧控件发送。
+  async function waitForSendControl(input, text) {
+    const expected = normalizeText(text);
+    const end = Date.now() + DELIVERY_TIMEOUTS.sendReady;
+    let stableSend = null, stableCount = 0;
+    while (Date.now() < end) {
+      const blocker = blockerText();
+      if (blocker) throw new Error(`[platform_blocked] 填写招呼语时页面出现限制：${blocker.slice(0, 120)}`);
+      if (messageInput() !== input || input.isConnected === false) {
+        throw new Error('[chat_input_changed] 会话输入框已被替换，不能向旧输入框继续发送；发送前核对未通过，本条未继续发送');
+      }
+      const send = inputText(input) === expected ? sendButtonFor(input) : null;
+      if (controlEnabled(send)) {
+        stableCount = send === stableSend ? stableCount + 1 : 1;
+        stableSend = send;
+        if (stableCount >= 2) return send;
+      } else { stableSend = null; stableCount = 0; }
+      await sleep(250);
+    }
+    return null;
+  }
+
+  function sentMessageNodes(text, input) {
+    const expected = normalizeText(text);
+    return new Set(visible("div,p,span").filter(element => {
+      if (element === input || input?.contains?.(element) || element.contains?.(input)) return false;
+      if (element.closest?.("[role='dialog'],.dialog-wrap,[class*='modal'],.user-list,.chat-user-list,.conversation-list,[data-conversation-list],.user-item,.chat-user")) return false;
+      return normalizeText(element.innerText || element.textContent) === expected;
+    }));
+  }
+
+  function countOccurrences(source, text) {
+    const needle = normalizeText(text);
+    return needle ? normalizeText(source).split(needle).length - 1 : 0;
+  }
+
+  // 发送前记录聊天区已有的同文字次数（排除可编辑输入框里的草稿），点击后要求输入框清空且新增本次文字。
+  function sendEvidenceBaseline(input, text) {
+    const draft = input.matches("textarea,input") ? "" : inputText(input);
+    return {nodes:sentMessageNodes(text, input),
+      bodyCount:Math.max(0, countOccurrences(document.body?.innerText || "", text) - countOccurrences(draft, text))};
+  }
+
+  async function waitForSendEvidence(input, text, baseline = {nodes:new Set(),bodyCount:0}) {
+    const end = Date.now() + DELIVERY_TIMEOUTS.sendEvidence;
+    let stableEvidence = 0;
     while (Date.now() < end) {
       const blocker = blockerText();
       if (blocker) throw new Error(`[platform_blocked] 发送后页面出现限制：${blocker.slice(0, 120)}`);
-      if (!inputText(input) && normalizeText(document.body.innerText).includes(normalizeText(text))) return true;
+      const current = messageInput() || (input.isConnected !== false ? input : null);
+      const newMessage = [...sentMessageNodes(text, current || input)].some(element => !baseline.nodes.has(element))
+        || countOccurrences(document.body?.innerText || "", text) > baseline.bodyCount;
+      stableEvidence = (!current || !inputText(current)) && newMessage ? stableEvidence + 1 : 0;
+      if (stableEvidence >= 2) return true;
       await sleep(250);
     }
     return false;
@@ -1025,6 +1201,7 @@
     let attempts=0,lastReport=null,previous='',stableSince=0,lastInput=null,lastLoggedCode='';
     while (Date.now()<deadline) {
       await assertDeliveryActive(pending);
+      if (await dismissSubscriptionReplyDialog(pending)) {stableSince=Date.now();await sleep(300);continue;}
       const report=inspectDestination(pending);
       const input=messageInput();
       attempts++;lastReport=report;
@@ -1096,7 +1273,17 @@
     finally {state.deliveryInFlight=null;}
   }
 
+  function uncertainError(message) {
+    const error = new Error(message);
+    error.deliveryUncertain = true;
+    return error;
+  }
+
   async function performDelivery(pending) {
+    // 页面恢复后，已经登记过发送请求的任务不能再点一次发送。
+    if (pending.textSendRequestedAt || ["sending_text", "sending_resume", "recording"].includes(pending.stage)) {
+      throw uncertainError("[delivery_already_requested] 当前任务已有发送请求，页面恢复后不重复发送；结果待人工核对");
+    }
     // 等待函数检查任务归属。旧任务失效只退出，不能清掉后来新建的待发送任务。
     const input = await waitForConversationDestination(pending);
     const resumeResponse = await sendRuntimeMessage({ type: "GET_RESUME_IMAGE_FOR_DELIVERY", deliveryId: pending.id });
@@ -1104,13 +1291,18 @@
     if (resumeResponse.enabled && !resumeResponse.configured) throw new Error("已开启自动附带简历图片，但设置页中没有已保存的图片");
     const resumeFileInput = resumeResponse.enabled ? await waitForResumeFileInput(input) : null;
     if (resumeResponse.enabled && !resumeFileInput) throw new Error("聊天页已打开，但没有唯一识别到图片上传控件，本条尚未发送");
+    const existing = inputText(input);
+    if (existing && existing !== normalizeText(pending.message)) throw new Error("[chat_draft_conflict] 当前输入框已有其他草稿，未覆盖也未发送");
     await requireDestination(pending,'填写文字前核对',input);
-    await updateDeliveryStage(pending, "sending_text");
-    setInput(input, pending.message);
-    await sleep(250);
-    if (inputText(input) !== normalizeText(pending.message)) throw new Error("招呼语没有完整写入输入框");
-    const send = sendButtonFor(input);
-    if (!send || send.disabled || send.getAttribute("aria-disabled") === "true") throw new Error("没有找到可点击的发送按钮，消息未发送");
+    // 准备草稿与请求发送分两个阶段：草稿已填写但未点击发送，不算已沟通。
+    await updateDeliveryStage(pending, "preparing_text");
+    if (!existing) setInput(input, pending.message);
+    await logEvent('消息草稿',existing ? 'reused' : 'filled',`当前任务招呼语${existing ? '已在输入框中，直接沿用' : '已填写'}，字数=${Array.from(pending.message).length}；等待发送控件就绪`,pending.job,
+      {runId:pending.automationRunId || ''});
+    const send = await waitForSendControl(input, pending.message);
+    if (!send) {
+      throw new Error(`[send_control_not_ready] 等待 ${Math.round(DELIVERY_TIMEOUTS.sendReady / 1000)} 秒后草稿或发送按钮未就绪；草稿匹配=${inputText(input) === normalizeText(pending.message) ? '是' : '否'}；${controlDescription(sendButtonFor(input))}；消息未发送；${chatSurfaceDiagnostics()}`);
+    }
     if (pending.mode === "auto") {
       const latestRun = await sendRuntimeMessage({ type: "GET_AUTOMATION" });
       if (state.stopRequested || latestRun?.session?.status !== "running" || latestRun.session.id !== pending.automationRunId) {
@@ -1118,8 +1310,14 @@
       }
     }
     await requireDestination(pending,'发送文字前核对',input);
+    const baseline = sendEvidenceBaseline(input, pending.message);
+    const reserved = await sendRuntimeMessage({type:'RESERVE_TEXT_SEND',deliveryId:pending.id});
+    if (!reserved?.ok) throw new Error(reserved?.error || "登记发送请求失败");
+    if (!reserved.claimed) throw uncertainError(`[delivery_already_requested] ${reserved.reason || "当前任务已请求发送，不重复点击"}`);
+    Object.assign(pending, reserved.pending);
+    await logEvent('消息发送','clicking',`草稿和发送按钮连续就绪，点击${controlDescription(send)}`,pending.job,{runId:pending.automationRunId || ''});
     safeElementClick(send);
-    if (!(await waitForSendEvidence(input, pending.message))) throw new Error("[send_evidence_missing] 点击发送后没有取得明确成功证据，本条结果待核对，不计成功");
+    if (!(await waitForSendEvidence(input, pending.message, baseline))) throw new Error("[send_evidence_missing] 点击发送后没有取得明确成功证据（需要输入框清空且聊天记录新增本次文字），本条结果待核对，不计成功");
     let resumeImageStatus = resumeResponse.enabled ? "failed" : "not_requested";
     if (resumeResponse.enabled) {
       await updateDeliveryStage(pending, "sending_resume");
@@ -1156,7 +1354,7 @@
     return true;
   }
 
-  async function waitForWorkerOutcome(pending, timeout = 120000) {
+  async function waitForWorkerOutcome(pending, timeout = DELIVERY_TIMEOUTS.workerOutcome) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline && !state.stopRequested) {
       const [outcomeResponse, pendingResponse, runResponse] = await Promise.all([
@@ -1186,11 +1384,11 @@
       }
       if (runResponse?.session?.status !== "running") throw new Error(runResponse?.session?.reason || "本轮已停止");
       if (!pendingResponse?.pending) throw new Error("临时投递任务已消失，但没有取得发送结果");
-      const stageLabel = ({ opening_job: "正在加载岗位详情", opening_chat: "正在进入沟通页", sending_text: "正在发送招呼语", sending_resume: "正在发送简历图片", recording: "正在保存防重记录" })[pendingResponse.pending.stage] || "正在临时标签页投递";
+      const stageLabel = ({ opening_job: "正在加载岗位详情", opening_chat: "正在进入沟通页", continuing_chat: "正在处理继续沟通中间页", preparing_text: "正在等待草稿和发送按钮", sending_text: "正在发送招呼语", sending_resume: "正在发送简历图片", recording: "正在保存防重记录" })[pendingResponse.pending.stage] || "正在临时标签页投递";
       setNotice(`${stageLabel}；原职位列表保持不动…`, "ok");
       await sleep(700);
     }
-    throw new Error("[delivery_timeout] 临时投递页超过 120 秒没有完成，本条单独记录，避免重复发送");
+    throw new Error(`[delivery_timeout] 临时投递页超过 ${Math.round(timeout / 1000)} 秒没有完成，本条单独记录，避免重复发送`);
   }
 
   async function openDelivery(mode, runId = null, alreadyConfirmed = false) {
@@ -1219,9 +1417,11 @@
     const button = communicationButton();
     if (!button) throw new Error("没有找到当前岗位的立即沟通/继续沟通按钮");
     setNotice("正在进入当前岗位的沟通页面…");
-    safeElementClick(button);
-    const input = await waitForInput().catch(() => null);
-    if (input) await deliver(response.pending);
+    await updateDeliveryStage(response.pending, "opening_chat");
+    await clickCommunication(response.pending, button);
+    const input = await waitForInput(response.pending);
+    if (!input) throw new Error(`点击沟通后未等到聊天输入框；${chatSurfaceDiagnostics()}`);
+    await deliver(response.pending);
     return true;
   }
 
@@ -1333,6 +1533,7 @@
     const matching = pending?.pending?.automationRunId === session.id && pending.pending.jobKey === stableJobKey(job);
     const result = await sendRuntimeMessage({type:'FAIL_AUTOMATION_JOB',sessionId:session.id,job,status,
       deliveryId:deliveryId || (matching ? pending.pending.id : undefined),reason:String(error.message || error),
+      uncertain:Boolean(error.deliveryUncertain),
       code:String(error.message || '').match(/\[([a-z_]+)\]/u)?.[1] || 'job_exception'});
     if (!result?.ok || result.ignored) throw new Error(result?.reason || result?.error || '本条失败记录未保存，无法安全推进队列');
     state.automation = result.publicSession || state.automation;
@@ -1538,58 +1739,78 @@
     render();
     if (workerRole === "chat" || isChatPage()) return deliver(pending);
 
-    await updateDeliveryStage(pending, "opening_job");
-    const detailStarted=Date.now();
-    const detailDeadline = Date.now() + 15000;
+    // 页面切换（同岗位详情中间页、页面重载）后恢复同一任务：不重新点击立即沟通。
+    const resumingTransition = ["opening_chat", "continuing_chat"].includes(pending.stage) && pending.communicationActions?.length;
     let button = null;
-    let readAttempts=0;
-    while (Date.now() < detailDeadline) {
-      const blocker = blockerText();
-      if (blocker) throw new Error(`[platform_blocked] 临时岗位页出现安全验证或限制：${blocker.slice(0, 120)}`);
-      if (isChatPage()) return deliver(pending);
-      const latest = await getPendingForCurrentPage();
-      if (!latest?.pending || latest.pending.id !== pending.id) return true;
-      if (latest.workerRole === "detail" && latest.pending.chatTabId) return true;
-      button = communicationButton(findDetailRoot());
-      const report=inspectDestination(pending);
-      readAttempts++;
-      if (readAttempts===1) await logDestination(pending,'临时详情身份核对','loading',report,
-        {elapsedMs:Date.now()-detailStarted,attempts:readAttempts,communicationButtonFound:Boolean(button)});
-      if (button && report.matched) break;
-      await sleep(300);
-    }
-    const finalReport=inspectDestination(pending);
-    if (finalReport.matched && !button) {finalReport.code='communication_button_missing';finalReport.reason='身份核对通过，但未找到可见的沟通按钮';}
-    await logDestination(pending,'临时详情身份核对',finalReport.matched && button ? 'ready' : 'read_error',finalReport,
-      {elapsedMs:Date.now()-detailStarted,attempts:readAttempts,communicationButtonFound:Boolean(button)});
-    if (!finalReport.matched) throw new Error(`[${finalReport.code}] ${finalReport.reason}；临时详情页校验未通过，未点击沟通`);
-    if (!button) throw new Error('[communication_button_missing] 临时岗位页没有找到与待投岗位一致的立即沟通/继续沟通按钮');
-    await updateDeliveryStage(pending, "opening_chat");
-    const buttonDisabled=Boolean(button.disabled || button.getAttribute?.('aria-disabled')==='true');
+    let buttonDisabled = false;
     const clickStarted=Date.now(),beforePath=location.pathname;
     const entryLog=async(result,code,latest=null)=>logEvent('沟通入口诊断',result,
-      `沟通按钮${buttonDisabled ? '禁用' : '可用'}；页面${location.pathname===beforePath ? '仍停留在原详情' : '路径已变化'}；聊天子标签${latest?.pending?.chatTabId ? '已绑定' : '未绑定'}；最多一次点击，不刷新或重试`,pending.job,
+      `沟通按钮${buttonDisabled ? '禁用' : '可用'}；页面${location.pathname===beforePath ? '仍停留在原详情' : '路径已变化'}；聊天子标签${latest?.pending?.chatTabId ? '已绑定' : '未绑定'}；立即沟通/继续沟通各最多一次，不刷新或重试`,pending.job,
       {details:{code,pageUrl:location.href,pageType:isChatPage() ? 'chat' : 'detail',visibility:document.visibilityState,
         readyState:document.readyState,elapsedMs:Date.now()-clickStarted,inputFound:Boolean(messageInput()),
-        buttonDisabled,buttonTag:button.tagName || '',buttonHrefKind:/^javascript:/iu.test(button.getAttribute?.('href') || '') ? 'javascript' : button.getAttribute?.('href') ? 'link' : 'none',
-        dialogPresent:visible("[role='dialog'],.dialog-wrap,.dialog-container").length>0,chatTabBound:Boolean(latest?.pending?.chatTabId)}});
-    await entryLog('before_click','communication_click_ready');
-    if(buttonDisabled) throw new Error('[communication_button_disabled] 沟通按钮当前禁用，未点击，本条跳过');
-    safeElementClick(button);
-    const chatDeadline = Date.now() + 20000;
+        buttonDisabled,buttonTag:button?.tagName || '',buttonHrefKind:/^javascript:/iu.test(button?.getAttribute?.('href') || '') ? 'javascript' : button?.getAttribute?.('href') ? 'link' : 'none',
+        dialogPresent:visible("[role='dialog'],.dialog-wrap,.dialog-container").length>0,chatTabBound:Boolean(latest?.pending?.chatTabId),
+        communicationActions:(latest?.pending || pending).communicationActions?.map(action=>action.kind) || []}});
+    if (!resumingTransition) {
+      await updateDeliveryStage(pending, "opening_job");
+      const detailStarted=Date.now();
+      const detailDeadline = Date.now() + DELIVERY_TIMEOUTS.detail;
+      let readAttempts=0;
+      while (Date.now() < detailDeadline) {
+        const blocker = blockerText();
+        if (blocker) throw new Error(`[platform_blocked] 临时岗位页出现安全验证或限制：${blocker.slice(0, 120)}`);
+        if (isChatPage()) return deliver(pending);
+        const latest = await getPendingForCurrentPage();
+        if (!latest?.pending || latest.pending.id !== pending.id || latest.delegated) return true;
+        button = communicationButton(findDetailRoot());
+        const report=inspectDestination(pending);
+        readAttempts++;
+        if (readAttempts===1) await logDestination(pending,'临时详情身份核对','loading',report,
+          {elapsedMs:Date.now()-detailStarted,attempts:readAttempts,communicationButtonFound:Boolean(button)});
+        if (button && report.matched) break;
+        await sleep(300);
+      }
+      const finalReport=inspectDestination(pending);
+      if (finalReport.matched && !button) {finalReport.code='communication_button_missing';finalReport.reason='身份核对通过，但未找到可见的沟通按钮';}
+      await logDestination(pending,'临时详情身份核对',finalReport.matched && button ? 'ready' : 'read_error',finalReport,
+        {elapsedMs:Date.now()-detailStarted,attempts:readAttempts,communicationButtonFound:Boolean(button)});
+      if (!finalReport.matched) throw new Error(`[${finalReport.code}] ${finalReport.reason}；临时详情页校验未通过，未点击沟通`);
+      if (!button) throw new Error('[communication_button_missing] 临时岗位页没有找到与待投岗位一致的立即沟通/继续沟通按钮');
+      await updateDeliveryStage(pending, "opening_chat");
+      buttonDisabled=!controlEnabled(button);
+      await entryLog('before_click','communication_click_ready');
+      if(buttonDisabled) throw new Error('[communication_button_disabled] 沟通按钮当前禁用，未点击，本条跳过');
+      await clickCommunication(pending, button);
+    } else {
+      await logEvent('沟通中间页','resumed','页面切换后恢复同一个投递任务，继续处理继续沟通或聊天输入框，不重置为新岗位',pending.job,
+        {runId:pending.automationRunId || ''});
+    }
+    // 点击后：关闭订阅/二维码弹层、处理“继续沟通”中间状态，直到出现真实聊天输入框。
+    const buttonTextBefore = pending.communicationActions?.[0]?.buttonText || normalizeText(button?.textContent || '');
+    const pathBefore = `${location.pathname}${location.search || ''}`.slice(0, 240);
+    const chatDeadline = Date.now() + DELIVERY_TIMEOUTS.chat;
     let nextEntryLog=Date.now()+5000;
     while (Date.now() < chatDeadline) {
       const blocker = blockerText();
       if (blocker) throw new Error(`[platform_blocked] 进入沟通页时出现安全验证或限制：${blocker.slice(0, 120)}`);
-      if (messageInput()) return deliver(pending);
       const latest = await getPendingForCurrentPage();
-      if (!latest?.pending || latest.pending.id !== pending.id) return true;
-      if (latest.workerRole === "detail" && latest.pending.chatTabId) return true;
+      if (!latest?.pending || latest.pending.id !== pending.id || latest.delegated) return true;
+      Object.assign(pending, latest.pending);
+      if (await dismissSubscriptionReplyDialog(pending)) { await sleep(300); continue; }
+      if (messageInput()) return deliver(pending);
+      await continueCommunication(pending);
       if(Date.now()>=nextEntryLog) {await entryLog('waiting','communication_entry_wait',latest);nextEntryLog=Date.now()+5000;}
       await sleep(300);
     }
     await entryLog('timeout','communication_entry_timeout',await getPendingForCurrentPage());
-    throw new Error("[communication_entry_timeout] 已点击沟通，但 20 秒内既没有在当前页识别到输入框，也没有检测到任务聊天页；详见沟通入口诊断，本条跳过，不重复点击");
+    const buttonAfter = communicationButton(findDetailRoot());
+    const buttonTextAfter = normalizeText(buttonAfter?.textContent || buttonAfter?.getAttribute?.('aria-label') || '');
+    const pathAfter = `${location.pathname}${location.search || ''}`.slice(0, 240);
+    const seconds = Math.round(DELIVERY_TIMEOUTS.chat / 1000);
+    if (!/继续沟通|已沟通/u.test(buttonTextBefore) && /继续沟通|已沟通/u.test(buttonTextAfter)) {
+      throw uncertainError(`[communication_state_changed] 点击前按钮“${buttonTextBefore || '未读到'}”，点击后变成“${buttonTextAfter}”，但 ${seconds} 秒内没有出现聊天输入框。BOSS 可能仍开启自动默认打招呼，或已经直接建立沟通；插件没有再次发送，本岗位待人工核对，继续后续岗位；${chatSurfaceDiagnostics()}`);
+    }
+    throw new Error(`[communication_entry_timeout] 已点击沟通，但 ${seconds} 秒内没有识别到输入框或任务聊天页；点击前按钮“${buttonTextBefore || '未读到'}”，点击后按钮“${buttonTextAfter || '未读到'}”，页面路径由“${pathBefore}”变为“${pathAfter}”；${chatSurfaceDiagnostics()}；详见沟通入口诊断，本条跳过，不重复点击`);
   }
 
   $("#refresh").addEventListener("click", () => refreshJob(true));
@@ -1695,13 +1916,12 @@
   await loadState();
   const pending = await getPendingForCurrentPage(isChatPage() ? 15000 : 0);
   if (pending?.pending && pending.isWorker) {
+    if (pending.delegated) return;
     try {
       await runDeliveryWorker(pending.pending, pending.workerRole);
     } catch (error) {
       const latest = await getPendingForCurrentPage();
-      const delegatedToChat = latest?.pending?.id === pending.pending.id
-        && latest.workerRole === "detail"
-        && Number.isInteger(latest.pending.chatTabId);
+      const delegatedToChat = latest?.pending?.id === pending.pending.id && latest.delegated;
       if (delegatedToChat) return;
       if (latest?.pending?.id!==pending.pending.id) return; // 已取消/已替换，旧页不能停止新一轮。
       const reason = `临时投递页执行失败：${error.message}`;

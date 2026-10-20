@@ -42,7 +42,9 @@ test("自动模式保留原列表并由后台临时标签页发送和关闭", as
   assert.match(content, /OPEN_DELIVERY_WORKER/u);
   assert.match(content, /waitForWorkerOutcome/u);
   assert.match(content, /getPendingForCurrentPage/u);
-  assert.match(content, /latest\.pending\.chatTabId/u);
+  assert.match(content, /latest\.delegated/u);
+  assert.match(content, /RESERVE_TEXT_SEND/u);
+  assert.match(content, /RESERVE_COMMUNICATION_ACTION/u);
   assert.match(content, /CLOSE_DELIVERY_WORKER/u);
   assert.match(content, /waitForSendEvidence/u);
   assert.match(content, /sendResumeImage/u);
@@ -60,7 +62,7 @@ test("自动模式保留原列表并由后台临时标签页发送和关闭", as
   assert.doesNotMatch(content, /panel\.style\.display\s*=\s*["']none["']/u);
   assert.match(background, /claimPendingDelivery/u);
   assert.match(background, /pending\.chatTabId\s*=\s*tabId/u);
-  assert.match(background, /sender\.tab\.openerTabId\s*===\s*pending\.workerTabId/u);
+  assert.match(background, /deliveryTabIds\(pending\)\.includes\(sender\.tab\.openerTabId\)/u);
 });
 
 test("独立详情页按可见文字识别并兼容BOSS隐藏SEO文本", async () => {
@@ -72,16 +74,21 @@ test("独立详情页按可见文字识别并兼容BOSS隐藏SEO文本", async (
   assert.doesNotMatch(content, /\/职位描述\/u\.test\(element\.textContent/u);
 });
 
-test("新版清单版本为0.4.18并允许持久保存简历图片", async () => {
+test("新版清单版本为0.4.19并允许持久保存简历图片", async () => {
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "0.4.18");
+  assert.equal(manifest.version, "0.4.19");
   assert.ok(manifest.permissions.includes("unlimitedStorage"));
 });
 
-test("模型提示词以岗位为主且禁止菜单式罗列", async () => {
+test("模型提示词以职位描述切入、结合个人总结、真人语气且禁止菜单式罗列", async () => {
   const background = await readFile(new URL("../background.js", import.meta.url), "utf8");
-  assert.match(background, /最核心的1至2个要求/u);
-  assert.match(background, /selectedProfileFacts 最多返回2项/u);
-  assert.match(background, /最多提到2个岗位真正需要的工具或技术栈/u);
+  const prompt = background.slice(background.indexOf("const MODEL_SYSTEM_PROMPT"), background.indexOf("function publicSettings("));
+  assert.match(prompt, /最核心、最具体的1至2个点/u);
+  assert.match(prompt, /结合 candidateSummary/u);
+  assert.match(prompt, /语气像真人聊天/u);
+  assert.match(prompt, /最多提到2个工具或技术栈/u);
+  // 不再对模型做真实性约束，也不再强制固定的“看贵公司在招聘”开头。
+  assert.doesNotMatch(prompt, /真实经验|编造|已经具备|离家/u);
+  assert.doesNotMatch(prompt, /开头必须严格写成/u);
   assert.match(background, /looksLikeCapabilityMenu/u);
 });

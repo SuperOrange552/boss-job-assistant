@@ -6,6 +6,7 @@ import {
   containsSelfDisadvantage,
   contactEligibility,
   formatPreferredGreeting,
+  conversationalJobTitle,
   looksLikeCapabilityMenu,
   normalizeCompanyKey,
   parseModelResult,
@@ -150,9 +151,20 @@ test("模型话术会统一为用户指定的自然开头并隐藏具体公司�
       recruiterName: "赵洁琼 在线"
     }
   );
-  assert.match(greeting, /^赵老师您好，看贵公司在招聘软件测试工程师岗位，/u);
+  // 只统一称呼；正文开场保留模型按职位描述写的内容，公司全称换成“贵公司”。
+  assert.equal(greeting, "赵老师您好，看到贵公司在招软件测试工程师，我有3年软件测试经验，也做过App和接口测试，希望进一步沟通。");
   assert.doesNotMatch(greeting, /示例教育科技/u);
   assert.doesNotMatch(greeting, /老师好/u);
+});
+
+test("称呼统一但不再强加固定的“看贵公司在招聘…岗位”开头", () => {
+  const job = { title: "接口测试工程师", company: "示例公司", recruiterName: "陈女士" };
+  assert.equal(formatPreferredGreeting("陈老师你好！看JD里要做支付链路的接口测试，这块我之前一直在做。", job),
+    "陈老师您好，看JD里要做支付链路的接口测试，这块我之前一直在做。");
+  assert.equal(formatPreferredGreeting("您好，看岗位要负责App回归，我平时就在跟这块。", job),
+    "陈老师您好，看岗位要负责App回归，我平时就在跟这块。");
+  assert.doesNotMatch(formatPreferredGreeting("岗位里提到的订单测试我做过不少。", job), /看贵公司在招聘/u);
+  assert.match(formatPreferredGreeting("", job), /^陈老师您好，.+聊聊。$/u);
 });
 
 test("菜单式技术堆砌会被识别，只回应1至2个岗位要求的话术可以通过", () => {
@@ -295,4 +307,19 @@ test("模型输入使用设置页保存的招呼语规则", () => {
   assert.equal(payload.greetingRules, "拟人化；有礼貌；结合招聘信息");
   assert.equal(payload.contactRound, 2);
   assert.match(payload.candidateSummary, /掌门AI一对一/u);
+});
+
+test("话术里的岗位名去掉括号备注、招聘前缀和福利尾巴，原始标题不变", () => {
+  assert.equal(conversationalJobTitle("软件测试工程师（电商方向）"), "软件测试工程师");
+  assert.equal(conversationalJobTitle("测试工程师(上海)(急招)"), "测试工程师");
+  assert.equal(conversationalJobTitle("【急招】接口测试工程师"), "接口测试工程师");
+  assert.equal(conversationalJobTitle("高级测试工程师-五险一金"), "高级测试工程师");
+  assert.equal(conversationalJobTitle("徐汇区/诚聘测试工程师（无需加班）"), "测试工程师");
+  assert.equal(conversationalJobTitle("产品+运营"), "产品+运营");
+  const job = { title: "软件测试工程师（电商方向）", recruiterName: "陈女士", company: "示例公司", description: "负责订单和支付流程测试" };
+  assert.equal(formatPreferredGreeting("看咱们软件测试工程师（电商方向）要做订单测试，（电商方向）这块我做过。", job),
+    "陈老师您好，看咱们软件测试工程师要做订单测试，这块我做过。");
+  const payload = buildModelPayload(job, analyzeJob(job), DEFAULT_SETTINGS);
+  assert.equal(payload.job.jobTitle, "软件测试工程师");
+  assert.equal(job.title, "软件测试工程师（电商方向）");
 });
