@@ -86,7 +86,8 @@ export function jobOutcomeBadge(row) {
   let label='',tone='warning';
   if (row.status==='skipped') {
     label=row.category==='contact_hold' ? '防重跳过' : '筛选跳过';
-    if (/HR 活跃筛选/u.test(reason)) label='HR活跃不符';
+    if (/^跳过关键词/u.test(reason)) label='关键词跳过';
+    else if (/HR 活跃筛选/u.test(reason)) label='HR活跃不符';
     else if (/自动批量暂缓猎头\/外包/u.test(reason)) label='猎头/外包跳过';
     else if (/自动批量暂缓大中型科技\/互联网公司/u.test(reason)) label='大中厂留给手动';
     else if (row.category==='other_skip') label='已跳过';
@@ -119,6 +120,46 @@ export function looksLikeCapabilityMenu(value = "") {
   const listSeparators = (text.match(/[、/]/gu) || []).length;
   const tools = ["postman", "apifox", "mysql", "charles", "adb", "linux", "python", "requests", "pytest", "yaml", "allure", "jmeter", "dify", "llm-as-judge", "selenium", "playwright"];
   return matchTerms(text, tools).length > 2 || (matchedTerms >= 4 && listSeparators >= 2);
+}
+
+// 用户自定义跳过关键词（同通用版0.2.6的“排除词”）：换行、中英文逗号或分号分隔；
+// 中文按字面包含，纯英文/数字按完整词匹配；同一个词重复只计一次。
+export const SKIP_KEYWORD_FIELDS = Object.freeze([
+  {key:'Title', label:'岗位标题', read:job => normalizeText(`${job.title || ''} ${job.listingTitle || ''}`)},
+  {key:'Description', label:'职位描述', read:job => cleanJobText(job.description)}
+]);
+
+export function parseKeywords(value = '') {
+  const terms = new Map();
+  for (const word of String(value).split(/[\n\r,，;；]+/u).map((item) => item.trim()).filter(Boolean)) {
+    if (!terms.has(word.toLowerCase())) terms.set(word.toLowerCase(), word); // 不区分大小写去重，保留第一次的写法
+  }
+  return [...terms.values()];
+}
+
+export function skipKeywordRuleLabel(mode, count) {
+  return mode === 'all' ? '全部命中' : mode === 'count' ? `至少命中${count}个不同词` : '命中任意1个';
+}
+
+export function checkSkipKeywords(job = {}, settings = {}) {
+  settings = settings || {};
+  job = job || {};
+  for (const field of SKIP_KEYWORD_FIELDS) {
+    const terms = parseKeywords(settings[`skip${field.key}Keywords`]);
+    if (!terms.length) continue;
+    const text = field.read(job);
+    if (!text) continue; // 列表卡片尚无职位描述时，只检查标题；描述留到读取详情后再查。
+    const mode = ['any','all','count'].includes(settings[`skip${field.key}Mode`]) ? settings[`skip${field.key}Mode`] : 'any';
+    const count = Math.max(1, Math.min(terms.length, Number.parseInt(settings[`skip${field.key}Count`], 10) || 1));
+    const threshold = mode === 'all' ? terms.length : mode === 'count' ? count : 1;
+    const hits = matchTerms(text, terms);
+    if (hits.length >= threshold) {
+      const reason = `跳过关键词：${field.label}命中“${hits.join('、')}”（${skipKeywordRuleLabel(mode, count)}）`;
+      return {decision:'exclude', category:'user_skip_keywords', code:'user_skip_keywords', reasons:[reason],
+        field:field.key.toLowerCase(), matchedKeywords:hits, matchedProfilePoints:[]};
+    }
+  }
+  return null;
 }
 
 export function cleanJobText(value = "") {

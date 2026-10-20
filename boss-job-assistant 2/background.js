@@ -3,6 +3,7 @@ import {
   precheckAgency,
   precheckTechCompany,
   checkHrActivity,
+  checkSkipKeywords,
   HR_ACTIVITY_FILTERS,
   normalizeHrActivityFilter,
   buildModelPayload,
@@ -624,7 +625,7 @@ async function setPendingDelivery(delivery, sender = null) {
     if (session.sourceDocumentKey && session.sourceDocumentKey !== sourceDocumentKey(sender || {},delivery.sourceDocumentToken)) throw new Error('原职位列表文档已变化，不能继续旧轮次');
     const hr = checkHrActivity(job.activityText,session.hrActivityFilter);
     if (!hr.allowed) throw new Error(`[${hr.code}] ${hr.reason}`);
-    const companyHold=precheckTechCompany(job) || precheckAgency(job),analysis=analyzeJob(job);
+    const companyHold=precheckTechCompany(job) || precheckAgency(job) || checkSkipKeywords(job,await getSettings()),analysis=analyzeJob(job);
     if(companyHold || ['postpone','exclude'].includes(analysis.decision)) throw new Error(`[local_screening_filtered] ${(companyHold || analysis).reasons.join('；')}`);
   }
   const pending = {
@@ -1337,6 +1338,9 @@ async function generateWithModel(job, request = {}, sender = null) {
     const hr=checkHrActivity(job.activityText,session.hrActivityFilter);
     if(!hr.allowed) return blocked(hr.reason,hr.code);
   }
+  // 用户设置的跳过关键词对自动和单条生成都生效；命中时不请求模型。
+  const skip=checkSkipKeywords(job,settings);
+  if(skip) return blocked(skip.reasons.join('；'),skip.code);
   if (["postpone", "exclude"].includes(localAnalysis.decision)) {
     return blocked(localAnalysis.reasons.join('；'),'local_screening_filtered');
   }

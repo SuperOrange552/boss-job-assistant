@@ -75,6 +75,40 @@
 
     <section class="card grid">
       <div class="full">
+      <h2>跳过关键词</h2>
+      <p class="help">岗位标题或职位描述出现这里填写的词，就直接跳过该岗位：不调用模型、不发送，记日志并继续下一条，不占成功额度。用换行、中英文逗号或分号分隔；中文按字面包含，纯英文按完整单词匹配（例如 ECU 不会误命中其他英文单词）。留空表示不限制。标题在左侧列表就会先检查，职位描述在读取详情后检查。</p>
+      </div>
+      <label class="full">岗位标题出现以下词就跳过
+        <textarea id="skip-title-keywords" rows="3" placeholder="例如：实习，外包，驻场，兼职"></textarea>
+      </label>
+      <label>岗位标题匹配方式
+        <select id="skip-title-mode">
+          <option value="any">命中任意 1 个就跳过</option>
+          <option value="all">全部命中才跳过</option>
+          <option value="count">至少命中 N 个不同词才跳过</option>
+        </select>
+      </label>
+      <label>N（仅“至少命中 N 个”时使用）
+        <input id="skip-title-count" type="number" min="1" max="100" step="1">
+      </label>
+      <label class="full">职位描述出现以下词就跳过
+        <textarea id="skip-description-keywords" rows="3" placeholder="例如：长期出差，单休，驻场"></textarea>
+      </label>
+      <label>职位描述匹配方式
+        <select id="skip-description-mode">
+          <option value="any">命中任意 1 个就跳过</option>
+          <option value="all">全部命中才跳过</option>
+          <option value="count">至少命中 N 个不同词才跳过</option>
+        </select>
+      </label>
+      <label>N（仅“至少命中 N 个”时使用）
+        <input id="skip-description-count" type="number" min="1" max="100" step="1">
+      </label>
+      <p class="warning full">按字面匹配，不理解否定：填“出差”也会命中“无需出差”。请尽量填写不容易误伤的词。</p>
+    </section>
+
+    <section class="card grid">
+      <div class="full">
       <h2>次数与休息</h2>
       <p class="help">每份成功发送后随机等待1～3秒（旧配置自动迁移）；以下最短/最长休息是每批成功发送后的额外休息。</p>
       </div>
