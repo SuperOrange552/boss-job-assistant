@@ -1,0 +1,92 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOSS 通用岗位助手 · 后台设置</title><link rel="stylesheet" href="ui.css"></head>
+<body class="settings-page"><main class="container">
+<header><p class="eyebrow">独立通用版 · 0.2.6</p><h1>后台设置：全部业务筛选均可配置</h1><p class="subtitle">岗位、正文、标签、公司、地点、招聘者、活跃和回复均可分别填写包含词与排除词。所有筛选项默认留空；行政岗位文字仅作为填写示例，不会自动限制求职方向。</p><p class="critical-warning"><strong>发送前必须检查：</strong>使用这个软件需要关掉自动默认打招呼设置（BOSS 内的设置），不然消息发送不过去！！！</p><p class="community-banner">如果遇到使用上的问题或有优化建议，在抖音找：<strong>superorange7</strong>。欢迎大家提出建议，授权大家做二次开发和传播。</p><nav><a href="#filters">岗位筛选</a><a href="#greetings">个人总结与AI要求</a><a href="#pacing">字数与发送节奏</a><a href="#account">简历与接口</a></nav></header>
+<section class="card grid" id="filters"><div class="full"><h2>01 · 可配置岗位筛选</h2><p class="help">包含组填写后必须通过，排除组触发后会跳过；所有空白组不参与判断。多个已填写的包含组之间是“并且”关系。每个字段都能单独选择任意命中、全部命中或至少命中 N 个。</p><p class="warning">规则只按当前页面可读取的文字判断，不猜测公司行业或岗位性质。筛选字段由代码中的统一定义自动生成，详细示例见包内 <code>CONFIGURATION_EXAMPLES.md</code>。</p></div>
+<div id="filter-groups" class="full grid"></div>
+<div class="keyword-group full"><h3>招聘者活跃时间上限（可选）</h3>
+<label>最多多少天内活跃<input id="filter-hr-days" type="number" min="0" max="3650" step="1"><small>0 表示不限制；1 表示当天内；3 表示三天内。三天内会包含在线、刚刚活跃、当天及更近状态。</small></label>
+<label>页面没有活跃标识 / 无法识别时<select id="filter-hr-unknown"><option value="skip">跳过并记录“活跃状态未知”</option><option value="allow">放行（不代表确认近期活跃）</option></select></label>
+<small>若想按页面原始标签筛选，也可使用上方“招聘者活跃标签”的包含/排除词；时间上限和标签词同时填写时，两者都要通过。</small>
+</div></section>
+<section class="card" id="greetings"><h2>02 · 个人总结与 AI 写作要求</h2><p class="help">“打招呼”是主动联系招聘者的开场消息，不是自动回复聊天。AI / 自定义模板的选择，以及模板编辑、预览和保存，已移到 BOSS 岗位页面板；这里不再设置默认话术。</p>
+<label>个人总结（默认空白）<textarea id="candidate-summary" rows="5" placeholder="填写自己的经历、能力与求职意向，仅AI方式需要。"></textarea></label>
+<label>AI写作要求<textarea id="greeting-rules" rows="4"></textarea></label><p class="help">AI以当前岗位职责为主，结合少量个人经历生成开场话术；模板模式不调用模型。这些后台设置在新的一轮开始时读取，运行中不会改变。</p></section>
+<section class="card grid" id="pacing"><div class="full"><h2>03 · 字数、发送节奏与次数</h2><p class="help">以下均在后台配置。两组间隔为随机整数秒；达到每批数量时，每条间隔与每批额外休息相加，AI生成耗时另算。间隔不能保证不触发平台限制。</p></div>
+<label class="full">单条打招呼字数上限<input id="greeting-max-chars" type="number" min="20" max="2000" step="1"><small>20–2000字符，包含标点。适用于新岗位的AI话术与模板替换后的文字；超过上限会提示修改，不截断句子后发送。消息批量激活暂不使用此上限。</small></label>
+<label>每条成功后 · 最短间隔（秒）<input id="per-send-min" type="number" min="1" max="3600" step="1"></label><label>每条成功后 · 最长间隔（秒）<input id="per-send-max" type="number" min="1" max="3600" step="1"></label>
+<label>每批成功发送数<input id="batch-size" type="number" min="1" max="100" step="1"></label><label>每日总发送上限（两模块共用）<input id="daily-limit" type="number" min="1" max="500" step="1"></label>
+<label>每批额外休息 · 最短（秒）<input id="rest-min" type="number" min="1" max="3600" step="1"></label><label>每批额外休息 · 最长（秒）<input id="rest-max" type="number" min="1" max="3600" step="1"></label>
+<label>新岗位默认单轮上限<input id="default-run-limit" type="number" min="1" max="500" step="1"></label><label>同岗位最多沟通次数<input id="max-contacts-per-job" type="number" min="1" max="10" step="1"></label>
+<label>第一次后的最短间隔（小时）<input id="second-contact-hours" type="number" min="0" max="720" step="1"></label><label>第二次及以后最短间隔（小时）<input id="later-contact-hours" type="number" min="0" max="720" step="1"></label>
+<label>同公司其他岗位防重（小时）<input id="company-cooldown-hours" type="number" min="0" max="720" step="1"></label>
+<label class="check-row"><input id="later-contacts-next-day" type="checkbox"><span>第二次沟通以后还必须跨北京时间自然日</span></label>
+<p class="help full">沟通次数、两段间隔和跨日要求全部可设置。修改设置不会删除原有沟通历史；历史仍用于防止重复发送。批量激活另有独立防重记录。</p></section>
+<section class="card grid" id="timeouts"><div class="full"><h2>04 · 页面加载与发送确认等待</h2><p class="help">以下都是“最长等待上限”，不是每条固定停留时间。页面或控件提前就绪时会立即继续。网络较慢或 Windows 电脑可适当调大。</p></div>
+<label>岗位详情加载上限（秒）<input id="detail-load-timeout" type="number" min="5" max="180" step="1"><small>默认 30 秒；用于左右岗位标题、公司和正文同步。</small></label>
+<label>沟通页 / 输入框就绪上限（秒）<input id="chat-ready-timeout" type="number" min="10" max="300" step="1"><small>默认 60 秒；包含 BOSS 岗位页内弹出的沟通窗口。</small></label>
+<label>文字发送结果确认上限（秒）<input id="send-evidence-timeout" type="number" min="5" max="120" step="1"><small>默认 15 秒；等待输入框清空且聊天记录出现该文字。</small></label>
+<label>简历图片发送结果确认上限（秒）<input id="resume-send-timeout" type="number" min="10" max="180" step="1"><small>默认 45 秒；包含图片预览和聊天记录回显。</small></label>
+<p class="warning full">只有点击岗位的“立即沟通/继续沟通”之后，插件才检查订阅弹层。若弹层内同时出现“订阅”和“消息”（顺序不限），或明确出现二维码/扫码线索，只点击弹层内部的关闭按钮；职位识别、详情读取及点击沟通之前绝不关闭弹层或职位窗口。关闭后继续当前岗位，等待真实聊天输入框并正常发送文字与简历图片；不会在弹层内输入。没有明确内部关闭控件的弹层不会盲点。</p></section>
+<details class="card" id="activation"><summary>消息批量激活设置（本次暂不调整）</summary><section class="grid"><div class="full"><h2>05 · 消息页批量激活</h2><p class="help">独立入口，在 BOSS 消息页使用：先读取并预览联系人状态，勾选名单，再确认发送。不会去搜索岗位或重新投递简历。</p><p class="warning">“对方已读/未读”来自我方消息的阅读标识，不是左侧红色未读数量；“对方回复过”和“我方发过消息”分别判断。状态无法确认时显示未知，不据此猜测。拒绝或不再联系信号会跳过。</p></div>
+<label>对方阅读状态<select id="activation-read-filter"><option value="all">已读、未读都可（已知消息状态）</option><option value="read">只处理对方已读</option><option value="unread">只处理对方未读</option></select></label>
+<label>对方是否回复过<select id="activation-reply-filter"><option value="all">不限</option><option value="replied">回复过</option><option value="unreplied">未发现回复</option></select></label>
+<label>我方是否发过消息<select id="activation-sent-filter"><option value="sent">已经发过</option><option value="unsent">尚未发过（需可确认）</option><option value="all">两者均可</option></select></label>
+<label>文案来源<select id="activation-mode"><option value="template">自己填写统一文案</option><option value="ai">AI先生成统一文案，确认后使用</option></select></label>
+<label>激活默认单轮上限<input id="activation-limit" type="number" min="1" max="100" step="1"></label><label>同一会话激活间隔（小时）<input id="activation-cooldown" type="number" min="1" max="720" step="1"></label>
+<label class="full">统一激活文案<textarea id="activation-template" rows="3"></textarea><small>按原文发送，不替换变量。AI只在消息页点击生成时调用，生成后可编辑，不会为每位HR重复请求。</small></label>
+<label class="full">AI激活写作要求<textarea id="activation-rules" rows="2"></textarea></label>
+<label class="check-row full"><input id="activation-use-categories" type="checkbox"><span>可选：按沟通状态使用不同文案（优先级：未发过 → 对方回复过 → 对方已读 / 未读）。AI按组各生成一段，组内统一。</span></label>
+<div id="activation-categories" class="full grid">
+<label>已发 · 对方已读<textarea id="activation-text-read" rows="2" placeholder=""></textarea><small>发送这一组的统一跟进文字。</small></label><label>已发 · 对方未读<textarea id="activation-text-unread" rows="2" placeholder=""></textarea><small>不假设对方看过简历。</small></label><label>对方回复过<textarea id="activation-text-replied" rows="2" placeholder=""></textarea><small>用于跟进已有沟通；明确拒绝者仍跳过。</small></label><label>尚未发过<textarea id="activation-text-never-sent" rows="2" placeholder=""></textarea><small>只有可确认无我方发送记录时使用。</small></label>
+</div></section></details>
+<div id="account"></div>    <section class="card">
+      <h2>简历图片</h2>
+      <p class="help">选择一次 JPG、PNG 或 WebP 图片（最大 8 MB）。图片只保存在当前 Chrome 扩展的本地存储中，不会写进插件文件，也不会发送给智谱或 DeepSeek。</p>
+      <label class="check-row">
+        <input id="attach-resume-image" type="checkbox">
+        <span>自动投放时，招呼语发送成功后继续发送这张简历图片</span>
+      </label>
+      <div class="resume-row">
+        <input id="resume-image-file" type="file" accept="image/jpeg,image/png,image/webp">
+        <button id="save-resume-image" class="secondary compact" type="button">保存所选图片</button>
+        <button id="clear-resume-image" class="danger compact" type="button">清除图片</button>
+      </div>
+      <img id="resume-preview" class="resume-preview" alt="已选择的简历图片预览" hidden>
+      <p id="resume-status" class="inline-status">尚未保存简历图片</p>
+      <p class="warning">浏览器不能在以后自动读取一个普通本地路径，所以这里会保存你选择的图片副本。更换图片后需要重新保存。若文字已成功发送、但图片发送结果无法确认，插件会把文字记入防重记录，记录图片失败原因，然后继续下一个岗位；不会重复发送文字。</p>
+    </section>
+
+    <section class="card grid">
+      <div class="full">
+        <h2>模型接口</h2>
+        <p class="help">可以填写 Base URL，也可以直接粘贴以 <code>/chat/completions</code> 结尾的完整接口地址；插件会自动规范化，避免重复拼接路径。</p>
+      </div>
+      <label>提供商
+        <select id="model-provider">
+          <option value="zhipu">智谱 AI</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+      </label>
+      <label>模型名称
+        <input id="model-name" type="text" autocomplete="off">
+      </label>
+      <label class="full">API Base URL 或完整接口地址
+        <input id="api-base-url" type="url" autocomplete="off">
+      </label>
+      <label class="full">API Key
+        <div class="key-row">
+          <input id="api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="在这里填写 API Key">
+          <button id="toggle-key" class="secondary compact" type="button">显示</button>
+          <button id="clear-key" class="danger compact" type="button">清空</button>
+        </div>
+      </label>
+      <p class="critical-warning full"><strong>API Key 安全提醒：</strong>一定不要泄漏你的 API Key！这是通用接口凭证，别人拿到你的 API Key 后可以直接使用。切记，切记！！！！！！</p>
+      <p class="warning full">API Key 会保存在 Chrome 的扩展本地存储中，不会显示在 BOSS 页面或扩展弹窗中；但该存储不是加密密码保险箱。不要在公共或多人共用的 Chrome 配置中保存。</p>
+      <button id="test-model" class="secondary" type="button">保存并测试接口</button>
+      <span id="model-status" class="inline-status"></span>
+    </section>
+
+
+<section class="card"><h2>单条发送与使用边界</h2><label class="check-row"><input id="enable-direct-send" type="checkbox"><span>允许手动确认单条话术后自动发送</span></label><p class="warning">批量操作另需在对应页面预览并确认开始。验证码、风险提示、身份不一致、发送状态不明确时停止；不绕过平台限制。请勿同时启用个人版和通用版处理同一账号。</p></section>
+<div class="footer-actions"><button id="save" class="primary" type="button">保存全部设置</button><span id="save-status" class="inline-status" role="status"></span></div>
+</main><script type="module" src="options.js"></script></body></html>

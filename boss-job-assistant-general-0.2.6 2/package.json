@@ -1,0 +1,10 @@
+{
+  "name": "boss-job-assistant-general",
+  "version": "0.2.6",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check background.js && node --check activation-background.js && node --check content.js && node --check chat-activation.js && node --check options.js && node --check popup.js && node --check settings.js && node --check shared/core.js && node --check shared/page.js && node --check shared/diagnostics.js && node --check shared/config.js && node --check shared/activation.js && node --check shared/chat-dom.js && node --check shared/greeting-controls.js"
+  }
+}

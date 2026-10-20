@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "BOSS 通用岗位助手",
+  "version": "0.2.6",
+  "description": "可配置岗位、公司、地点、招聘者与活跃条件，选择AI或模板并配置发送节奏。",
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://www.zhipin.com/*",
+    "https://open.bigmodel.cn/*",
+    "https://api.deepseek.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "BOSS 岗位助手",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.zhipin.com/web/geek/*",
+        "https://www.zhipin.com/job_detail/*"
+      ],
+      "js": [
+        "content.js",
+        "chat-activation.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "shared/core.js",
+        "shared/page.js",
+        "shared/config.js",
+        "shared/activation.js",
+        "shared/chat-dom.js",
+        "shared/greeting-controls.js"
+      ],
+      "matches": [
+        "https://www.zhipin.com/*"
+      ]
+    }
+  ]
+}
