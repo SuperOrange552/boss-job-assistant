@@ -1,0 +1,11 @@
+{
+  "name": "boss-job-assistant-extension",
+  "version": "0.4.18",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check background.js && node --check content.js && node --check options.js && node --check popup.js && node --check settings.js && node --check shared/core.js && node --check shared/page.js && node --check shared/identity.js && node --check shared/chat.js && node --check shared/diagnostics.js && node --check shared/navigation.js",
+    "test:chat-browser": "node tests/chat-dom.browser.mjs && node tests/boss-template.browser.mjs"
+  }
+}

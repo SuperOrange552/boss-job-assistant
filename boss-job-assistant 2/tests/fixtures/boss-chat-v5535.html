@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>BOSS v5535 render-derived offline fixture — NOT captured live DOM</title>
+  <!--
+    这是按官方前端 bundle 的 render 函数重建的离线 fixture，不是用户页面 DOM 抓取。
+    Source URL: https://static.zhipin.com/fe-zhipin-geek/web/chat-new/v5535/static/js/chat.c4b6e86c.js
+    Local inspected source: /tmp/boss-public-chat-bundle.gaJKyH/chat.c4b6e86c.js
+    Inspection date: 2026-09-04 (Asia/Shanghai)
+    姓名、公司与职责的位置和 class 来自 render 结构；以下 CSS 仅用于独立浏览器几何布局。
+    没有加载 BOSS 业务脚本、网络图片、账户资料、API Key 或任何真实招聘聊天记录。
+  -->
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px sans-serif; background: #f4f7f8; }
+    main { display: flex; width: 1180px; height: 840px; }
+    .contact-list { width: 260px; padding: 18px; background: white; }
+    .contact-list input { width: 220px; height: 34px; }
+    .contact-list .contact { margin-top: 20px; }
+    .chat-conversation { width: 920px; background: white; }
+    .top-info-content { padding: 10px 24px 18px; background: #f0faf9; }
+    .user-info-wrap { min-height: 60px; display: flex; align-items: center; }
+    .base-info { display: flex; align-items: center; gap: 14px; }
+    .name-content { display: inline-flex; }
+    .name-text { font-size: 21px; font-weight: bold; }
+    .vline { display: inline-block; height: 18px; border-left: 1px solid #b6bfc2; }
+    .chat-position-content { background: white; padding: 16px 20px; border-radius: 9px; }
+    .position-content { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
+    .left-content { display: flex; align-items: center; gap: 20px; }
+    .position-name { font-weight: bold; font-size: 20px; }
+    .salary { color: #f05a58; }
+    .right-content { padding-left: 24px; color: #687477; }
+    .iboss-left { display: inline-block; width: 7px; height: 7px; margin-left: 8px; border-top: 1px solid; border-right: 1px solid; transform: rotate(45deg); }
+    .message-content { height: 360px; padding: 24px; overflow: auto; }
+    .message-item { padding: 12px; margin-bottom: 14px; background: #edf0f2; }
+    .message-controls { height: 220px; padding: 16px 24px; border-top: 1px solid #eee; }
+    .message-controls > div:first-child { height: 30px; }
+    .editor-container { margin-top: 6px; }
+    .chat-input { min-height: 100px; padding: 8px; outline: 0; border: 1px solid #d3dcde; }
+    .chat-op { text-align: right; padding-top: 10px; }
+    .btn-send { padding: 8px 26px; }
+  </style>
+</head>
+<body>
+<main>
+  <aside class="contact-list">
+    <input placeholder="搜索30天内的联系人">
+    <div class="contact"><span class="name-text">俞女士</span><span>术锐</span><span>软件测试工程师</span></div>
+  </aside>
+  <section class="chat-conversation">
+    <div class="top-info-content">
+      <div class="user-info-wrap">
+        <div class="user-info">
+          <div class="base-info">
+            <div class="name-content"><span class="name-text">俞女士</span></div>
+            <span>术锐</span>
+            <i class="vline"></i>
+            <span class="base-title">HR</span>
+          </div>
+        </div>
+      </div>
+      <div class="chat-position-content">
+        <div class="position-main">
+          <div class="position-content" ka="geek_chat_job_detail">
+            <div class="left-content"><span class="position-name">软件测试工程师</span><span class="salary">10-15K</span><span class="city">上海</span></div>
+            <div class="right-content"><span>查看职位<i class="iboss-left"></i></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="message-content">
+      <div class="message-list">
+        <div class="message-item item-friend"><div class="base-info"><div class="name-content"><span class="name-text">俞女士</span></div><span>术锐</span><i class="vline"></i><span class="base-title">HR</span></div><span class="position-name">软件测试工程师</span><span>查看职位</span></div>
+      </div>
+    </div>
+    <div class="message-controls">
+      <div>表情　图片</div>
+      <div class="editor-container">
+        <div id="chat-input" class="chat-input" contenteditable="true" data-placeholder="输入消息"></div>
+        <div class="chat-op"><button class="btn-send">发送</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

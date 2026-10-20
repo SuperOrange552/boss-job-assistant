@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "BOSS 软件测试岗位助手",
+  "version": "0.4.18",
+  "description": "先本地筛选上海软件测试岗位，批量跳过大中型科技互联网公司、猎头外包及硬件汽车岗位；通过后生成招呼语并发送文字和简历图片。",
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://www.zhipin.com/*",
+    "https://open.bigmodel.cn/*",
+    "https://api.deepseek.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "BOSS 岗位助手",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.zhipin.com/web/geek/*",
+        "https://www.zhipin.com/job_detail/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "shared/core.js",
+        "shared/page.js",
+        "shared/identity.js",
+        "shared/chat.js"
+      ],
+      "matches": [
+        "https://www.zhipin.com/*"
+      ]
+    }
+  ]
+}

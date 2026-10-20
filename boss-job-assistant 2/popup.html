@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOSS 岗位助手</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup-page">
+  <main class="popup">
+    <p class="eyebrow">运行状态</p>
+    <h1>BOSS 岗位助手</h1>
+    <section class="stats">
+      <div><strong id="today-count">—</strong><span>今日成功发送</span></div>
+      <div><strong id="history-count">—</strong><span>已记录岗位</span></div>
+    </section>
+    <p id="cooldown" class="status-box">正在读取…</p>
+    <p id="automation" class="status-box">自动投放状态读取中…</p>
+    <p class="help">打开 BOSS 职位列表，在页面右下角设置本轮数量并点击“开始自动投放”。</p>
+    <button id="open-options" class="primary full-button" type="button">打开设置</button>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

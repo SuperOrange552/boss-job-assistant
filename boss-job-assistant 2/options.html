@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOSS 岗位助手设置</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="settings-page">
+  <main class="container">
+    <header>
+      <p class="eyebrow">Chrome 扩展设置</p>
+      <h1>BOSS 软件测试岗位助手</h1>
+      <p class="subtitle">先用本地规则排除硬件、嵌入式、车载和光学岗位，再由扩展直接调用你配置的智谱或 DeepSeek 接口。</p>
+    </header>
+
+    <section class="card">
+      <h2>个人总结</h2>
+      <p class="help">生成话术时，这段内容会连同当前岗位信息发送给你配置的智谱或 DeepSeek 接口。</p>
+      <textarea id="candidate-summary" rows="15"></textarea>
+    </section>
+
+    <section class="card">
+      <h2>简历图片</h2>
+      <p class="help">选择一次 JPG、PNG 或 WebP 图片（最大 8 MB）。图片只保存在当前 Chrome 扩展的本地存储中，不会写进插件文件，也不会发送给智谱或 DeepSeek。</p>
+      <label class="check-row">
+        <input id="attach-resume-image" type="checkbox">
+        <span>自动投放时，招呼语发送成功后继续发送这张简历图片</span>
+      </label>
+      <div class="resume-row">
+        <input id="resume-image-file" type="file" accept="image/jpeg,image/png,image/webp">
+        <button id="save-resume-image" class="secondary compact" type="button">保存所选图片</button>
+        <button id="clear-resume-image" class="danger compact" type="button">清除图片</button>
+      </div>
+      <img id="resume-preview" class="resume-preview" alt="已选择的简历图片预览" hidden>
+      <p id="resume-status" class="inline-status">尚未保存简历图片</p>
+      <p class="warning">浏览器不能在以后自动读取一个普通本地路径，所以这里会保存你选择的图片副本。更换图片后需要重新保存。若文字已成功发送、但图片发送结果无法确认，插件会把文字记入防重记录并停止本轮，避免重复给同一招聘者发送文字。</p>
+    </section>
+
+    <section class="card grid">
+      <div class="full">
+        <h2>模型接口</h2>
+        <p class="help">可以填写 Base URL，也可以直接粘贴以 <code>/chat/completions</code> 结尾的完整接口地址；插件会自动规范化，避免重复拼接路径。</p>
+      </div>
+      <label>提供商
+        <select id="model-provider">
+          <option value="zhipu">智谱 AI</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+      </label>
+      <label>模型名称
+        <input id="model-name" type="text" autocomplete="off">
+      </label>
+      <label class="full">API Base URL 或完整接口地址
+        <input id="api-base-url" type="url" autocomplete="off">
+      </label>
+      <label class="full">API Key
+        <div class="key-row">
+          <input id="api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="在这里填写 API Key">
+          <button id="toggle-key" class="secondary compact" type="button">显示</button>
+          <button id="clear-key" class="danger compact" type="button">清空</button>
+        </div>
+      </label>
+      <p class="warning full">API Key 会保存在 Chrome 的扩展本地存储中，不会显示在 BOSS 页面或扩展弹窗中；但该存储不是加密密码保险箱。不要在公共或多人共用的 Chrome 配置中保存。</p>
+      <button id="test-model" class="secondary" type="button">保存并测试接口</button>
+      <span id="model-status" class="inline-status"></span>
+    </section>
+
+    <section class="card">
+      <h2>招呼语规则</h2>
+      <p class="help">这段规则会直接发给模型。默认要求以岗位职责和任职要求为主，个人总结只取1～2项最相关经验作为回应；你可以继续补充偏好。</p>
+      <textarea id="greeting-rules" rows="5"></textarea>
+      <p class="warning">强制保护：无论这里如何修改，插件都会禁止自曝短板，也会拦截“把功能、接口、自动化、性能和一串工具全部罗列出来”的菜单式话术。每条只回应当前岗位最核心的1～2个要求。</p>
+    </section>
+
+    <section class="card grid">
+      <div class="full">
+      <h2>次数与休息</h2>
+      <p class="help">每份成功发送后随机等待1～3秒（旧配置自动迁移）；以下最短/最长休息是每批成功发送后的额外休息。</p>
+      </div>
+      <label>每日成功发送上限
+        <input id="daily-limit" type="number" min="1" max="500" step="1">
+      </label>
+      <label>每批成功发送数
+        <input id="batch-size" type="number" min="1" max="100" step="1">
+      </label>
+      <label>每批额外最短休息（秒）
+        <input id="rest-min" type="number" min="1" max="600" step="1">
+      </label>
+      <label>每批额外最长休息（秒）
+        <input id="rest-max" type="number" min="1" max="600" step="1">
+      </label>
+      <label>默认单轮最大投放数
+        <input id="default-run-limit" type="number" min="1" max="500" step="1">
+      </label>
+      <label>同岗位二次沟通最短间隔（小时）
+        <input id="second-contact-hours" type="number" min="0" max="168" step="1">
+      </label>
+      <label>同公司其他岗位防重时间（小时）
+        <input id="company-cooldown-hours" type="number" min="0" max="720" step="1">
+      </label>
+      <p class="help full">当前规则：同岗位第一次沟通后，达到上方最短间隔才允许第二次；第三次从上海时间次日开始允许；同一岗位最多三次。同公司其他岗位在防重时间内不会重复发送。</p>
+    </section>
+
+    <section class="card">
+      <h2>发送方式</h2>
+      <label class="check-row">
+        <input id="enable-direct-send" type="checkbox">
+        <span>允许在助手面板中手动确认单条消息后，自动点击 BOSS 的发送按钮</span>
+      </label>
+      <p class="warning">这个开关只控制“确认并发送”单条按钮。自动投放由 BOSS 页面助手中的“开始自动投放”单独启动；启动时会一次性确认本轮上限，此后本轮不会逐条确认。遇到安全验证、频繁操作、发送状态不明确或达到上限会自动停止。</p>
+    </section>
+
+    <div class="footer-actions">
+      <button id="save" class="primary" type="button">保存设置</button>
+      <span id="save-status" class="inline-status"></span>
+    </div>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
