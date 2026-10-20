@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, normalizeApiBaseUrl } from "./settings.js";
+import { parseKeywords } from "./shared/core.js";
 
 const byId = (id) => document.getElementById(id);
 const PROVIDER_PRESETS = Object.freeze({
@@ -27,7 +28,13 @@ const fields = {
   secondContactMinHours: byId("second-contact-hours"),
   companyCooldownHours: byId("company-cooldown-hours"),
   attachResumeImage: byId("attach-resume-image"),
-  enableDirectSend: byId("enable-direct-send")
+  enableDirectSend: byId("enable-direct-send"),
+  skipTitleKeywords: byId("skip-title-keywords"),
+  skipTitleMode: byId("skip-title-mode"),
+  skipTitleCount: byId("skip-title-count"),
+  skipDescriptionKeywords: byId("skip-description-keywords"),
+  skipDescriptionMode: byId("skip-description-mode"),
+  skipDescriptionCount: byId("skip-description-count")
 };
 
 const RESUME_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -100,6 +107,11 @@ async function load() {
   fields.companyCooldownHours.value = settings.companyCooldownHours;
   fields.attachResumeImage.checked = Boolean(settings.attachResumeImage);
   fields.enableDirectSend.checked = Boolean(settings.enableDirectSend);
+  for (const key of ["Title", "Description"]) {
+    fields[`skip${key}Keywords`].value = settings[`skip${key}Keywords`] || "";
+    fields[`skip${key}Mode`].value = settings[`skip${key}Mode`] || "any";
+    fields[`skip${key}Count`].value = settings[`skip${key}Count`] || 2;
+  }
 }
 
 function readSettings() {
@@ -114,6 +126,18 @@ function readSettings() {
   const apiUrl = new URL(normalizedBaseUrl);
   if (apiUrl.protocol !== "https:") throw new Error("API Base URL必须使用HTTPS");
   if (restMaxSeconds < restMinSeconds) throw new Error("最长休息时间不能小于最短休息时间");
+  const skip = {};
+  for (const [key, label] of [["Title", "岗位标题"], ["Description", "职位描述"]]) {
+    const raw = fields[`skip${key}Keywords`].value.trim();
+    const mode = fields[`skip${key}Mode`].value;
+    const count = Number(fields[`skip${key}Count`].value);
+    const terms = parseKeywords(raw);
+    if (raw.length > 5000) throw new Error(`${label}跳过关键词不能超过5000字`);
+    if (!["any", "all", "count"].includes(mode)) throw new Error(`${label}跳过关键词的匹配方式无效`);
+    if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error(`${label}跳过关键词的 N 必须是1至100的整数`);
+    if (mode === "count" && terms.length && count > terms.length) throw new Error(`${label}跳过关键词的 N 不能超过不同关键词数量（当前${terms.length}个）`);
+    Object.assign(skip, {[`skip${key}Keywords`]: raw, [`skip${key}Mode`]: mode, [`skip${key}Count`]: count});
+  }
   return {
     candidateSummary: fields.candidateSummary.value.trim(),
     modelProvider: fields.modelProvider.value,
@@ -133,7 +157,8 @@ function readSettings() {
     previewBeforeSend: true,
     secondContactSameDay: true,
     thirdContactNextDay: true,
-    maxContactsPerJob: 3
+    maxContactsPerJob: 3,
+    ...skip
   };
 }
 

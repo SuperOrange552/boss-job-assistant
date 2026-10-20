@@ -3,6 +3,8 @@ export function reasonCategory(reason = '', status = '') {
   if (['queued','delivering'].includes(status)) return status;
   if (status==='skipped' && /^(?:自动批量暂缓猎头\/外包|自动批量暂缓大中型科技\/互联网公司|本地筛选)/u.test(reason)) return 'filtered';
   if (status === 'skipped' && /^HR 活跃筛选/u.test(reason)) return 'filtered';
+  // 用户填写的词可能含“模型”“读取”等字样，先按前缀归入筛选跳过。
+  if (status === 'skipped' && /^跳过关键词/u.test(reason)) return 'filtered';
   if (['delivery_error','send_state_unknown','generation_error'].includes(status)) return status;
   // 模型正常给出“不推荐”是筛选跳过，不是模型调用故障。
   if (status === 'skipped' && /模型/u.test(reason) && !/话术|失败|超时|异常/u.test(reason)) return 'filtered';

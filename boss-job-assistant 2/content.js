@@ -3,7 +3,7 @@
   window.__BOSS_JOB_ASSISTANT_LOADED__ = true;
 
   const core = await import(chrome.runtime.getURL("shared/core.js"));
-  const { analyzeJob, precheckExplicitTitle, precheckAgency, precheckTechCompany, jobOutcomeBadge, normalizeCompanyKey, normalizeText, recruiterSalutation, stableJobKey,
+  const { analyzeJob, checkSkipKeywords, precheckExplicitTitle, precheckAgency, precheckTechCompany, jobOutcomeBadge, normalizeCompanyKey, normalizeText, recruiterSalutation, stableJobKey,
     HR_ACTIVITY_FILTERS, HR_ACTIVITY_LABEL_PATTERN, hrActivityLabel, checkHrActivity, normalizeHrActivityFilter } = core;
   const { visibleText, resolveCard, detailReady, detailReadiness, detailFingerprint } = await import(chrome.runtime.getURL("shared/page.js"));
   const {resolveCompanyRoles, independentDetailMatches, conversationIdentityMatches, destinationIdentityReport} = await import(chrome.runtime.getURL("shared/identity.js"));
@@ -727,7 +727,7 @@
     }
     state.lastFingerprint = job.identityReady ? fingerprint : '';
     state.job = job;
-    state.analysis = analyzeJob(job);
+    state.analysis = checkSkipKeywords(job,state.settings) || analyzeJob(job);
     state.modelResult = null;
     await loadState();
     if (refreshSequence !== state.refreshSequence) return job;
@@ -1600,7 +1600,8 @@
         }
         let job;
         try {
-          const earlyAnalysis = precheckTechCompany({...card,listingCompany:card.company}) || precheckAgency({...card,listingCompany:card.company}) || precheckExplicitTitle(card.title);
+          const earlyAnalysis = precheckTechCompany({...card,listingCompany:card.company}) || precheckAgency({...card,listingCompany:card.company})
+            || checkSkipKeywords({title:card.title},state.settings) || precheckExplicitTitle(card.title);
           if (earlyAnalysis) {
             // 此卡片尚未打开，不能使用右侧仍显示的上一条正文、公司或招聘者。
             const quick = {title:card.title,listingTitle:card.title,company:card.company,listingCompany:card.company,
@@ -1612,7 +1613,7 @@
             state.contact = {allowed:false,reason};
             // 登记 seenJobKeys / 已识别 / 已跳过，使 nextCard 前进且不占成功上限。
             await registerJob(session, quick, earlyAnalysis, 'skipped', reason);
-            await logEvent(earlyAnalysis.code==='tech_company_manual_only' ? '列表大中厂预筛' : earlyAnalysis.code==='agency_manual_only' ? '列表猎头/外包预筛' : '列表标题预筛','skipped',reason,quick,
+            await logEvent(earlyAnalysis.code==='tech_company_manual_only' ? '列表大中厂预筛' : earlyAnalysis.code==='agency_manual_only' ? '列表猎头/外包预筛' : earlyAnalysis.code==='user_skip_keywords' ? '列表关键词跳过' : '列表标题预筛','skipped',reason,quick,
               {details:{code:earlyAnalysis.code || 'explicit_title_postponed',modelCalled:false,continuation:'next_job'}});
             setNotice(reason);
             await sleep(500);
@@ -1621,7 +1622,7 @@
           setNotice(`正在识别：${card.title}…`);
           job = await selectAndWait(card);
           state.job = job;
-          state.analysis = precheckTechCompany(job) || precheckAgency(job) || analyzeJob(job);
+          state.analysis = precheckTechCompany(job) || precheckAgency(job) || checkSkipKeywords(job,state.settings) || analyzeJob(job);
           state.modelResult = null;
           state.contact = {allowed:false,reason:'详情已核对，正在检查沟通记录'};
           render();

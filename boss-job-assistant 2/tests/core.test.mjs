@@ -7,6 +7,9 @@ import {
   contactEligibility,
   formatPreferredGreeting,
   conversationalJobTitle,
+  checkSkipKeywords,
+  parseKeywords,
+  jobOutcomeBadge,
   looksLikeCapabilityMenu,
   normalizeCompanyKey,
   parseModelResult,
@@ -322,4 +325,20 @@ test("话术里的岗位名去掉括号备注、招聘前缀和福利尾巴，�
   const payload = buildModelPayload(job, analyzeJob(job), DEFAULT_SETTINGS);
   assert.equal(payload.job.jobTitle, "软件测试工程师");
   assert.equal(job.title, "软件测试工程师（电商方向）");
+});
+
+test("跳过关键词：分隔、去重、任意/全部/至少N个，英文按完整单词，留空不限制", () => {
+  assert.deepEqual(parseKeywords("实习，外包;驻场\n外包；ECU, ecu"), ["实习", "外包", "驻场", "ECU"]);
+  const job = { title: "软件测试工程师（外包驻场）", description: "负责ECU相关软件测试，需要长期出差。" };
+  assert.equal(checkSkipKeywords(job, {}), null);
+  assert.equal(checkSkipKeywords(job, null), null);
+  assert.match(checkSkipKeywords(job, { skipTitleKeywords: "外包，实习" }).reasons[0], /岗位标题命中“外包”（命中任意1个）/u);
+  assert.equal(checkSkipKeywords(job, { skipTitleKeywords: "外包，实习", skipTitleMode: "all" }), null);
+  assert.ok(checkSkipKeywords(job, { skipTitleKeywords: "外包，驻场", skipTitleMode: "all" }));
+  assert.equal(checkSkipKeywords(job, { skipDescriptionKeywords: "出差，夜班，单休", skipDescriptionMode: "count", skipDescriptionCount: 2 }), null);
+  assert.match(checkSkipKeywords(job, { skipDescriptionKeywords: "出差，ECU，单休", skipDescriptionMode: "count", skipDescriptionCount: 2 }).reasons[0], /职位描述命中“出差、ECU”（至少命中2个不同词）/u);
+  assert.equal(checkSkipKeywords({ title: "测试", description: "SECURE 平台" }, { skipDescriptionKeywords: "ECU" }), null);
+  assert.equal(checkSkipKeywords({ title: "测试工程师" }, { skipDescriptionKeywords: "出差" }), null);
+  const badge = jobOutcomeBadge({ status: "skipped", category: "filtered", reason: "跳过关键词：岗位标题命中“外包”（命中任意1个）" });
+  assert.match(badge.text, /^本轮关键词跳过/u);
 });

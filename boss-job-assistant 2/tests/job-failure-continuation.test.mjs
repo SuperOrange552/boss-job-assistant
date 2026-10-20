@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {analyzeJob,precheckExplicitTitle,precheckAgency,precheckTechCompany,stableJobKey,checkHrActivity} from '../shared/core.js';
+import {checkSkipKeywords,analyzeJob,precheckExplicitTitle,precheckAgency,precheckTechCompany,stableJobKey,checkHrActivity} from '../shared/core.js';
 import {detailFingerprint} from '../shared/page.js';
 
 // 实际 runLoop + 实际后台队列/历史/回执；只在进程内模拟 DOM、模型和 Chrome 边界。
@@ -48,7 +48,7 @@ async function simulate(ids,limit=2,{recordFailure=false,realOpen=false,hrActivi
   const selected=[],modelJobs=[],deliveries=[],stops=[],requests=[],notices=[];
   let currentJob=null, clock=1000;
   const context={state:{engineBusy:false,stopRequested:false},location:{pathname:'/web/geek/jobs'},Date:{now:()=>clock},
-    precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,detailFingerprint,checkHrActivity,label:value=>value,
+    checkSkipKeywords,precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,detailFingerprint,checkHrActivity,label:value=>value,
     sourceDocumentToken:'source-token',$:()=>({value:'仅内存测试'}),
     DELIVERY_TIMEOUTS:{detail:30000,chat:60000,sendReady:15000,sendEvidence:15000,workerOutcome:240000},
     render(){},setNotice(message){notices.push(message);},async sleep(ms){clock+=ms;},async waitSourceVisible(){},async waitCooldown(){store.cooldownUntil=0;},async loadState(){},applyContactMarkers(){},

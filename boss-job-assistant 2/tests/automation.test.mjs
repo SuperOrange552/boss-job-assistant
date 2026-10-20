@@ -74,9 +74,9 @@ test("独立详情页按可见文字识别并兼容BOSS隐藏SEO文本", async (
   assert.doesNotMatch(content, /\/职位描述\/u\.test\(element\.textContent/u);
 });
 
-test("新版清单版本为0.4.19并允许持久保存简历图片", async () => {
+test("新版清单版本为0.4.20并允许持久保存简历图片", async () => {
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "0.4.19");
+  assert.equal(manifest.version, "0.4.20");
   assert.ok(manifest.permissions.includes("unlimitedStorage"));
 });
 

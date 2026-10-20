@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,checkHrActivity} from '../shared/core.js';
+import {checkSkipKeywords,precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,checkHrActivity} from '../shared/core.js';
 import {detailFingerprint} from '../shared/page.js';
 import {reasonCategory} from '../shared/diagnostics.js';
 
@@ -29,7 +29,7 @@ test('游戏、普通软件、模糊词和否定描述不早筛，保留完整�
 const source=await readFile(new URL('../content.js',import.meta.url),'utf8');
 const code=source.slice(source.indexOf('  async function registerJob('),source.indexOf('  async function startRun('));
 
-async function runSimulation({blocker=''}={}) {
+async function runSimulation({blocker='',settings=null}={}) {
   const cards=[
     {jobKey:'adas-job',title:'ADAS测试工程师',company:'某大型汽车零部件公司',location:'上海',tags:['ADAS'],href:'https://www.zhipin.com/job_detail/adas-job.html'},
     {jobKey:'software-job',title:'软件测试工程师',company:'某汽车集团ICT公司',location:'上海',tags:['硬件行业'],href:'https://www.zhipin.com/job_detail/software-job.html'}
@@ -39,9 +39,9 @@ async function runSimulation({blocker=''}={}) {
   const session={id:'run-test',status:'running',runLimit:1,successCount:0,scannedCount:0,skippedCount:0,seenJobKeys:[]};
   const events=[],requests=[],selected=[],registered=[],stops=[];
   let models=0,deliveries=0;
-  const context={state:{engineBusy:false,stopRequested:false,job:{title:'上一条已显示软件岗位',description:'不能混入ADAS跳过记录'}},
-    location:{pathname:'/web/geek/jobs'},precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,detailFingerprint,checkHrActivity,
-    render(){},setNotice(){},async sleep(){},async waitSourceVisible(){},blockerText:()=>blocker,
+  const context={state:{engineBusy:false,stopRequested:false,settings,job:{title:'上一条已显示软件岗位',description:'不能混入ADAS跳过记录'}},
+    location:{pathname:'/web/geek/jobs'},checkSkipKeywords,precheckExplicitTitle,precheckAgency,precheckTechCompany,analyzeJob,stableJobKey,detailFingerprint,checkHrActivity,
+    render(){},setNotice(){},async sleep(){},async waitSourceVisible(){},async loadState(){},blockerText:()=>blocker,
     async nextCard(current){return cards.find(card=>!current.seenJobKeys.includes(card.jobKey));},
     async selectAndWait(card){selected.push(card.jobKey);assert.equal(card.jobKey,'software-job');return {...software};},
     async sendRuntimeMessage(message){
@@ -58,6 +58,7 @@ async function runSimulation({blocker=''}={}) {
         return {ok:true,publicSession:session};
       }
       if (message.type==='CHECK_CONTACT') return {allowed:true,eligibility:{round:1}};
+      if (message.type==='COMPLETE_AUTOMATION') {session.status='completed';return {ok:true,publicSession:session};}
       throw new Error(`非预期消息：${message.type}`);
     },
     async logEvent(...event){events.push(event);},
@@ -94,4 +95,21 @@ test('平台验证在早筛之前停止，不用跳过机制绕过平台限制',
   assert.match(result.stops[0],/安全验证/u);
   assert.equal(result.registered.length,0);assert.equal(result.selected.length,0);
   assert.equal(result.models,0);assert.equal(result.deliveries,0);
+});
+
+test('真实runLoop：岗位标题命中用户跳过关键词，在列表直接跳过，不打开详情、不调用模型',async()=>{
+  const result=await runSimulation({settings:{skipTitleKeywords:'ADAS，实习',skipTitleMode:'any'}});
+  assert.deepEqual(result.stops,[]);assert.deepEqual(result.selected,['software-job']);
+  assert.equal(result.models,1);assert.equal(result.session.skippedCount,1);
+  const skip=result.registered.find(item=>item.status==='skipped');
+  assert.match(skip.reason,/^跳过关键词：岗位标题命中“ADAS”（命中任意1个）/u);
+  assert.ok(result.events.some(([stage,,,,extra])=>stage==='列表关键词跳过' && extra.details.code==='user_skip_keywords' && extra.details.modelCalled===false));
+});
+
+test('真实runLoop：职位描述命中用户跳过关键词，读取详情后跳过，不调用模型也不投递',async()=>{
+  const result=await runSimulation({settings:{skipDescriptionKeywords:'回归，缺陷',skipDescriptionMode:'all'}});
+  assert.deepEqual(result.stops,[]);assert.deepEqual(result.selected,['software-job']);
+  assert.equal(result.models,0);assert.equal(result.deliveries,0);assert.equal(result.session.successCount,0);
+  const skip=result.registered.find(item=>item.job.title==='软件测试工程师');
+  assert.equal(skip.status,'skipped');assert.match(skip.reason,/^跳过关键词：职位描述命中“回归、缺陷”（全部命中）/u);
 });

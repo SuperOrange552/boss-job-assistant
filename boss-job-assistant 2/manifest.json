@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BOSS 软件测试岗位助手",
-  "version": "0.4.19",
+  "version": "0.4.20",
   "description": "先本地筛选上海软件测试岗位，批量跳过大中型科技互联网公司、猎头外包及硬件汽车岗位；通过后生成招呼语并发送文字和简历图片。",
   "permissions": [
     "storage",

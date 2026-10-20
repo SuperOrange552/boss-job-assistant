@@ -188,3 +188,17 @@ for(const condition of ['stopped','new_run','new_job']) test(`实际前端 ${con
   respond({ok:true,modelResult:{greeting},round:1});
   await assert.rejects(result,/丢弃/);assert.equal(state.modelResult,undefined);assert.equal(state.busy,false);assert.equal(logs.length,0);
 });
+
+test('跳过关键词：自动与单条生成都在后台本地拦截，零模型请求；未命中时正常生成',async()=>{
+  const runId=await setup();
+  Object.assign(store.settings,{skipTitleKeywords:'外包，驻场',skipDescriptionKeywords:'出差，夜班',skipDescriptionMode:'count',skipDescriptionCount:2});
+  const titled=await generate(runId,{...base,title:'软件测试工程师（驻场）'});
+  assert.equal(titled.blocked,true);assert.equal(titled.code,'user_skip_keywords');assert.match(titled.reason,/岗位标题命中“驻场”/u);
+  const manual=await send({type:'GENERATE_GREETING',job:{...base,description:`${base.description}需要长期出差，偶尔夜班。`}});
+  assert.equal(manual.blocked,true);assert.match(manual.reason,/职位描述命中“出差、夜班”（至少命中2个不同词）/u);
+  const one=await generate(runId,{...base,description:`${base.description}偶尔出差。`});
+  assert.equal(one.blocked,undefined);assert.ok(one.modelResult.greeting);
+  assert.equal(requests.length,1,'只有未命中的那条请求了模型');
+  const log=store.diagnosticEvents.find(e=>e.details?.code==='user_skip_keywords');
+  assert.equal(log.details.modelCalled,false);assert.equal(reasonCategory(titled.reason,'skipped'),'filtered');
+});
